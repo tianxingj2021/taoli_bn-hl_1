@@ -251,6 +251,7 @@ def place_binance_order():
     """下单接口"""
     try:
         data = request.get_json()
+        print(f"收到下单请求数据: {data}")  # 添加调试信息
         
         # 验证必需参数
         required_fields = ['symbol', 'side', 'quantity', 'leverage']
@@ -269,27 +270,38 @@ def place_binance_order():
         order_type = data.get('order_type', 'MARKET')  # 修改这里的参数名
         price = float(data['price']) if 'price' in data and data['price'] else None
         
-        # 调用下单函数
-        response = binance_trader.place_order(
-            symbol=symbol,
-            side=side,
-            usdt_amount=usdt_amount,  # 使用usdt_amount参数
-            leverage=leverage,
-            order_type=order_type,
-            price=price
-        )
+        print(f"处理后的参数: symbol={symbol}, side={side}, usdt_amount={usdt_amount}, leverage={leverage}, order_type={order_type}, price={price}")  # 添加调试信息
         
-        return jsonify({
-            'status': 'success',
-            'data': response
-        })
+        # 调用下单函数
+        try:
+            response = binance_trader.place_order(
+                symbol=symbol,
+                side=side,
+                usdt_amount=usdt_amount,  # 使用usdt_amount参数
+                leverage=leverage,
+                order_type=order_type,
+                price=price
+            )
+            print(f"下单响应: {response}")  # 添加调试信息
+            return jsonify({
+                'status': 'success',
+                'data': response
+            })
+        except Exception as e:
+            print(f"下单失败: {str(e)}")  # 添加调试信息
+            return jsonify({
+                'status': 'error',
+                'message': str(e)
+            })
         
     except ValueError as e:
+        print(f"参数验证失败: {str(e)}")  # 添加调试信息
         return jsonify({
             'status': 'error',
             'message': str(e)
         })
     except Exception as e:
+        print(f"处理请求失败: {str(e)}")  # 添加调试信息
         return jsonify({
             'status': 'error',
             'message': str(e)
@@ -352,24 +364,31 @@ def get_binance_symbol_info(symbol):
 def get_binance_symbols():
     """获取所有可交易的合约对"""
     try:
-        exchange_info = binance_trader.client.exchange_info()
+        print("开始获取币安合约交易对...")
+        exchange_info = binance_trader.client.futures_exchange_info()
+        print(f"获取到的交易所信息: {exchange_info}")
+        
         symbols = []
         for symbol_info in exchange_info['symbols']:
             if symbol_info['status'] == 'TRADING' and symbol_info['symbol'].endswith('USDT'):
                 symbols.append({
                     'symbol': symbol_info['symbol'],
                     'baseAsset': symbol_info['baseAsset'],
-                    'quoteAsset': symbol_info['quoteAsset']
+                    'quoteAsset': symbol_info['quoteAsset'],
+                    'pricePrecision': symbol_info['pricePrecision'],
+                    'quantityPrecision': symbol_info['quantityPrecision']
                 })
         
         # 按交易对名称排序
         symbols.sort(key=lambda x: x['symbol'])
+        print(f"处理后的交易对列表: {symbols}")
         
         return jsonify({
             'status': 'success',
             'data': symbols
         })
     except Exception as e:
+        print(f"获取币安合约交易对失败: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)

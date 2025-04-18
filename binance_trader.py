@@ -268,7 +268,7 @@ class BinanceTrader:
             
             # 发送订单
             try:
-                response = self.client.futures_new_order(**order_params)
+                response = self.client.create_order(**order_params)
                 return response
             except Exception as e:
                 error_msg = str(e)

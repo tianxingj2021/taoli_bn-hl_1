@@ -463,13 +463,32 @@ class HyperliquidTrader:
             raise Exception(f"获取最大杠杆倍数失败: {str(e)}")
 
     def get_symbol_price(self, symbol: str) -> float:
-        """获取交易对当前价格"""
+        """获取交易对的当前价格"""
         try:
-            ticker = self.exchange.fetch_ticker(symbol)
-            return float(ticker['last'])
+            print(f"开始获取{symbol}的价格...")
+            # 移除USDT后缀
+            base_symbol = symbol.split('/')[0] if '/' in symbol else symbol
+            base_symbol = base_symbol.split(':')[0] if ':' in base_symbol else base_symbol
+            base_symbol = base_symbol.replace('USDT', '')
+            
+            # 尝试最多3次
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    market_info = self.exchange.fetch_ticker(f"{base_symbol}/USDC:USDC")
+                    if market_info and 'last' in market_info and market_info['last']:
+                        print(f"获取到的价格信息: {market_info}")
+                        return float(market_info['last'])
+                except Exception as e:
+                    print(f"第{attempt + 1}次尝试获取价格失败: {str(e)}")
+                    if attempt < max_retries - 1:
+                        time.sleep(1)  # 等待1秒后重试
+                    continue
+            
+            raise Exception("无法获取价格信息")
         except Exception as e:
             print(f"获取价格失败: {str(e)}")
-            return 0.0
+            raise Exception(f"获取价格失败: {str(e)}")
 
     def usd_to_contract_amount(self, symbol: str, usd_amount: float) -> float:
         """
