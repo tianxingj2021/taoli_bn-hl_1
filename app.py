@@ -142,13 +142,13 @@ def index():
     return render_template('index.html')
 
 @app.route('/api/funding_rates')
-async def get_funding_rates():
+def get_funding_rates():
     try:
         # 获取当前时间
         current_time = datetime.now(pytz.timezone('Asia/Shanghai'))
         
         # 获取Hyperliquid资金费率
-        hl_rates = await get_hl_rates()
+        hl_rates = asyncio.run(get_hl_rates())
         
         # 获取币安资金费率
         binance_rates = binance_monitor.get_funding_rates()

@@ -406,27 +406,37 @@ class BinanceTrader:
     def get_all_positions(self):
         """获取所有持仓信息"""
         try:
+            print("开始获取持仓信息...")  # 添加日志
             # 使用get_position_risk获取所有持仓信息
             positions = self.client.futures_position_information()
             print(f"原始持仓数据: {positions}")  # 添加调试信息
             
+            if not positions:
+                print("警告：获取到的持仓数据为空")
+                return []
+            
             # 过滤出有持仓的仓位
             active_positions = []
             for position in positions:
-                position_amt = float(position.get('positionAmt', 0))
-                if position_amt != 0:
-                    # 获取持仓信息
-                    active_positions.append({
-                        'symbol': position['symbol'],
-                        'positionSide': 'LONG' if position_amt > 0 else 'SHORT',
-                        'positionAmt': abs(position_amt),
-                        'entryPrice': float(position.get('entryPrice', 0)),
-                        'unrealizedProfit': float(position.get('unRealizedProfit', 0)),
-                        'leverage': int(position.get('leverage', 5)),  # 默认值改为5
-                        'markPrice': float(position.get('markPrice', 0)),
-                        'isolatedMargin': float(position.get('isolatedMargin', 0)),
-                        'notional': abs(float(position.get('notional', 0)))
-                    })
+                try:
+                    position_amt = float(position.get('positionAmt', 0))
+                    if position_amt != 0:
+                        # 获取持仓信息
+                        active_positions.append({
+                            'symbol': position['symbol'],
+                            'positionSide': 'LONG' if position_amt > 0 else 'SHORT',
+                            'positionAmt': abs(position_amt),
+                            'entryPrice': float(position.get('entryPrice', 0)),
+                            'unrealizedProfit': float(position.get('unRealizedProfit', 0)),
+                            'leverage': int(position.get('leverage', 5)),  # 默认值改为5
+                            'markPrice': float(position.get('markPrice', 0)),
+                            'isolatedMargin': float(position.get('isolatedMargin', 0)),
+                            'notional': abs(float(position.get('notional', 0)))
+                        })
+                except Exception as e:
+                    print(f"处理持仓数据时出错: {str(e)}, 持仓数据: {position}")
+                    continue
+            
             print(f"处理后的持仓数据: {active_positions}")  # 添加调试信息
             return active_positions
         except Exception as e:
@@ -439,6 +449,8 @@ class BinanceTrader:
                 raise Exception("API密钥无效，请检查是否已正确设置API密钥")
             elif 'API-key verification failed' in error_msg:
                 raise Exception("API密钥验证失败，请检查密钥是否有效且具有足够权限")
+            elif 'Connection' in error_msg:
+                raise Exception("网络连接失败，请检查网络连接")
             else:
                 raise Exception(f"获取持仓信息失败: {error_msg}")
 
