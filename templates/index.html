@@ -102,6 +102,41 @@
             border-top-right-radius: 0;
             border-bottom-right-radius: 0;
         }
+        /* 添加表格加载状态和过渡效果 */
+        .table-loading {
+            opacity: 0.6;
+            transition: opacity 0.3s ease;
+        }
+        .table-loading::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.1);
+            pointer-events: none;
+        }
+        table {
+            position: relative;
+            transition: opacity 0.3s ease;
+        }
+        tr {
+            transition: background-color 0.3s ease;
+        }
+        tr:hover {
+            background-color: rgba(0, 0, 0, 0.05);
+        }
+        .btn {
+            transition: all 0.2s ease;
+        }
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
     </style>
 </head>
 <body>
@@ -1550,169 +1585,218 @@
 
         // 修改更新表格的函数
         function updateTable(data) {
+            // 添加加载状态类
+            const tables = document.querySelectorAll('table');
+            tables.forEach(table => {
+                table.classList.add('table-loading');
+            });
+
             // 更新第一个表格（原有逻辑）
             const tbody = document.getElementById('arbitrageOpportunities');
-            tbody.innerHTML = '';
+            const oldRows = Array.from(tbody.children);
+            const newRows = [];
 
             if (!data.opportunities || data.opportunities.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="8" class="text-center">暂无套利机会</td></tr>';
-                return;
+            } else {
+                // 按费率差的绝对值从大到小排序
+                const sortedOpportunities = data.opportunities.sort((a, b) => 
+                    Math.abs(b.difference) - Math.abs(a.difference)
+                );
+
+                // 使用Set去重
+                const seenSymbols = new Set();
+                sortedOpportunities.forEach((item, index) => {
+                    if (!seenSymbols.has(item.symbol)) {
+                        seenSymbols.add(item.symbol);
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${index + 1}</td>
+                            <td>${item.symbol}</td>
+                            <td class="${item.binance_rate >= 0 ? 'text-success' : 'text-danger'}">${item.binance_rate.toFixed(4)}%</td>
+                            <td class="${item.hl_rate >= 0 ? 'text-success' : 'text-danger'}">${item.hl_rate.toFixed(4)}%</td>
+                            <td class="${item.difference >= 0 ? 'text-success' : 'text-danger'}">${item.difference.toFixed(4)}%</td>
+                            <td>${item.binance_next_funding}</td>
+                            <td>${item.next_funding_hl}</td>
+                            <td>${item.strategy}</td>
+                        `;
+                        newRows.push(row);
+                    }
+                });
+
+                // 使用DocumentFragment优化DOM操作
+                const fragment = document.createDocumentFragment();
+                newRows.forEach(row => fragment.appendChild(row));
+                tbody.innerHTML = '';
+                tbody.appendChild(fragment);
             }
-
-            // 按费率差的绝对值从大到小排序
-            const sortedOpportunities = data.opportunities.sort((a, b) => 
-                Math.abs(b.difference) - Math.abs(a.difference)
-            );
-
-            sortedOpportunities.forEach((item, index) => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${index + 1}</td>
-                    <td>${item.symbol}</td>
-                    <td class="${item.binance_rate >= 0 ? 'text-success' : 'text-danger'}">${item.binance_rate.toFixed(4)}%</td>
-                    <td class="${item.hl_rate >= 0 ? 'text-success' : 'text-danger'}">${item.hl_rate.toFixed(4)}%</td>
-                    <td class="${item.difference >= 0 ? 'text-success' : 'text-danger'}">${item.difference.toFixed(4)}%</td>
-                    <td>${item.binance_next_funding}</td>
-                    <td>${item.next_funding_hl}</td>
-                    <td>${item.strategy}</td>
-                `;
-                tbody.appendChild(row);
-            });
 
             // 更新第二个表格（Hyperliquid高费率代币）
             const hlTbody = document.getElementById('hlHighRateTokens');
-            hlTbody.innerHTML = '';
+            const oldHlRows = Array.from(hlTbody.children);
+            const newHlRows = [];
 
             if (!data.all_contracts) {
                 hlTbody.innerHTML = '<tr><td colspan="9" class="text-center">暂无数据</td></tr>';
-                return;
-            }
+            } else {
+                // 获取当前时间
+                const now = new Date();
+                const currentHour = now.getHours();
 
-            // 获取当前时间
-            const now = new Date();
-            const currentHour = now.getHours();
-
-            // 筛选出Hyperliquid有费率的代币
-            const hlTokens = Object.entries(data.all_contracts)
-                .filter(([_, contract]) => contract.hl_rate !== null)
-                .map(([symbol, contract]) => {
-                    // 计算结算次数
-                    let settlementCount = 0;
-                    if (contract.binance_next_funding && contract.binance_next_funding !== '-') {
-                        const binanceTime = new Date(contract.binance_next_funding);
-                        const binanceHour = binanceTime.getHours();
-                        
-                        // 计算从当前时间到币安结算时间之间的整点次数
-                        if (currentHour < binanceHour) {
-                            settlementCount = binanceHour - currentHour - 1;
-                        } else if (currentHour > binanceHour) {
-                            settlementCount = (24 - currentHour) + binanceHour - 1;
+                // 筛选出Hyperliquid有费率的代币
+                const hlTokens = Object.entries(data.all_contracts)
+                    .filter(([_, contract]) => contract.hl_rate !== null)
+                    .map(([symbol, contract]) => {
+                        // 计算结算次数
+                        let settlementCount = 0;
+                        if (contract.binance_next_funding && contract.binance_next_funding !== '-') {
+                            const binanceTime = new Date(contract.binance_next_funding);
+                            const binanceHour = binanceTime.getHours();
+                            
+                            if (currentHour < binanceHour) {
+                                settlementCount = binanceHour - currentHour - 1;
+                            } else if (currentHour > binanceHour) {
+                                settlementCount = (24 - currentHour) + binanceHour - 1;
+                            }
+                            
+                            settlementCount = Math.max(0, settlementCount);
                         }
-                        
-                        // 确保结算次数不为负数
-                        settlementCount = Math.max(0, settlementCount);
-                    }
 
-                    // 计算结算费率
-                    const settlementRate = (Math.abs(contract.hl_rate) * settlementCount).toFixed(4);
+                        const settlementRate = (Math.abs(contract.hl_rate) * settlementCount).toFixed(4);
 
-                    return {
-                        symbol,
-                        hl_rate: contract.hl_rate,
-                        binance_rate: contract.binance_rate,
-                        difference: contract.difference,
-                        binance_next_funding: contract.binance_next_funding,
-                        next_funding_hl: contract.next_funding_hl,
-                        settlement_count: settlementCount,
-                        settlement_rate: settlementRate,
-                        strategy: contract.strategy || "暂无套利机会"
-                    };
+                        return {
+                            symbol,
+                            hl_rate: contract.hl_rate,
+                            binance_rate: contract.binance_rate,
+                            difference: contract.difference,
+                            binance_next_funding: contract.binance_next_funding,
+                            next_funding_hl: contract.next_funding_hl,
+                            settlement_count: settlementCount,
+                            settlement_rate: settlementRate,
+                            strategy: contract.strategy || "暂无套利机会"
+                        };
+                    });
+
+                // 按Hyperliquid费率绝对值从大到小排序并去重
+                const seenHlSymbols = new Set();
+                const sortedHlTokens = hlTokens
+                    .sort((a, b) => Math.abs(b.hl_rate) - Math.abs(a.hl_rate))
+                    .filter(item => {
+                        if (seenHlSymbols.has(item.symbol)) {
+                            return false;
+                        }
+                        seenHlSymbols.add(item.symbol);
+                        return true;
+                    })
+                    .slice(0, 20);
+
+                // 使用DocumentFragment优化DOM操作
+                const hlFragment = document.createDocumentFragment();
+                sortedHlTokens.forEach((item, index) => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${index + 1}</td>
+                        <td>${item.symbol}</td>
+                        <td class="${item.hl_rate >= 0 ? 'text-success' : 'text-danger'}">${item.hl_rate.toFixed(4)}%</td>
+                        <td class="${item.binance_rate !== null ? (item.binance_rate >= 0 ? 'text-success' : 'text-danger') : ''}">
+                            ${item.binance_rate !== null ? item.binance_rate.toFixed(4) + '%' : '暂无数据'}
+                        </td>
+                        <td class="${item.difference !== null ? (item.difference >= 0 ? 'text-success' : 'text-danger') : ''}">
+                            ${item.difference !== null ? item.difference.toFixed(4) + '%' : '-'}
+                        </td>
+                        <td>${item.binance_next_funding || '-'}</td>
+                        <td>${item.next_funding_hl || '-'}</td>
+                        <td>${item.settlement_count}</td>
+                        <td class="${parseFloat(item.settlement_rate) >= 0.25 ? 'text-success' : ''}">${item.settlement_rate}%</td>
+                    `;
+                    hlFragment.appendChild(row);
                 });
-
-            // 按Hyperliquid费率绝对值从大到小排序
-            const sortedHlTokens = hlTokens.sort((a, b) => 
-                Math.abs(b.hl_rate) - Math.abs(a.hl_rate)
-            ).slice(0, 20); // 只取前20个
-
-            sortedHlTokens.forEach((item, index) => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${index + 1}</td>
-                    <td>${item.symbol}</td>
-                    <td class="${item.hl_rate >= 0 ? 'text-success' : 'text-danger'}">${item.hl_rate.toFixed(4)}%</td>
-                    <td class="${item.binance_rate !== null ? (item.binance_rate >= 0 ? 'text-success' : 'text-danger') : ''}">
-                        ${item.binance_rate !== null ? item.binance_rate.toFixed(4) + '%' : '暂无数据'}
-                    </td>
-                    <td class="${item.difference !== null ? (item.difference >= 0 ? 'text-success' : 'text-danger') : ''}">
-                        ${item.difference !== null ? item.difference.toFixed(4) + '%' : '-'}
-                    </td>
-                    <td>${item.binance_next_funding || '-'}</td>
-                    <td>${item.next_funding_hl || '-'}</td>
-                    <td>${item.settlement_count}</td>
-                    <td class="${parseFloat(item.settlement_rate) >= 0.25 ? 'text-success' : ''}">${item.settlement_rate}%</td>
-                `;
-                hlTbody.appendChild(row);
-            });
+                hlTbody.innerHTML = '';
+                hlTbody.appendChild(hlFragment);
+            }
 
             // 更新自动交易配置2表格
             const opportunity2Body = document.getElementById('currentOpportunity2Body');
-            opportunity2Body.innerHTML = '';
+            const oldOpp2Rows = Array.from(opportunity2Body.children);
+            const newOpp2Rows = [];
 
-            // 筛选出结算费率大于0.25%的交易对
-            const highRateTokens = sortedHlTokens.filter(item => 
-                parseFloat(item.settlement_rate) >= 0.05
-            );
+            // 筛选出结算费率大于0.05%的交易对并去重
+            const seenOpp2Symbols = new Set();
+            const highRateTokens = sortedHlTokens.filter(item => {
+                if (seenOpp2Symbols.has(item.symbol)) {
+                    return false;
+                }
+                seenOpp2Symbols.add(item.symbol);
+                return parseFloat(item.settlement_rate) >= 0.05;
+            });
 
             if (highRateTokens.length === 0) {
                 opportunity2Body.innerHTML = '<tr><td colspan="11" class="text-center">暂无满足条件的交易对</td></tr>';
-                return;
+            } else {
+                // 获取用户设置的仓位比例
+                const positionRatio = parseFloat(document.getElementById('positionRatioInput').value) || 0.5;
+
+                // 使用Promise.all处理异步操作
+                Promise.all(highRateTokens.map(async (item) => {
+                    try {
+                        // 获取杠杆倍数
+                        const leverageInfo = await getMaxLeverage(item.symbol);
+                        const recommendedLeverage = leverageInfo.recommended_leverage;
+
+                        // 获取账户余额
+                        const [binanceBalance, hlBalance] = await Promise.all([
+                            getBinanceBalance(),
+                            getHyperliquidBalance()
+                        ]);
+
+                        // 计算建议仓位
+                        const recommendedPosition = Math.floor(Math.min(binanceBalance, hlBalance) * recommendedLeverage * positionRatio);
+
+                        // 计算预计利润
+                        const tradingFee = 0.002;
+                        const profitRate = parseFloat(item.settlement_rate)/100 - tradingFee;
+                        const estimatedProfit = (profitRate * recommendedPosition).toFixed(2);
+
+                        // 确定交易方向
+                        const longExchange = item.hl_rate < 0 ? 'Hyperliquid' : 'Binance';
+                        const shortExchange = item.hl_rate < 0 ? 'Binance' : 'Hyperliquid';
+
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${item.symbol}</td>
+                            <td class="${item.hl_rate >= 0 ? 'text-success' : 'text-danger'}">${item.hl_rate.toFixed(4)}%</td>
+                            <td class="${item.binance_rate !== null ? (item.binance_rate >= 0 ? 'text-success' : 'text-danger') : ''}">
+                                ${item.binance_rate !== null ? item.binance_rate.toFixed(4) + '%' : '暂无数据'}
+                            </td>
+                            <td>${recommendedLeverage}x</td>
+                            <td>${recommendedPosition} USDT</td>
+                            <td>${estimatedProfit} USDT</td>
+                            <td>${longExchange}</td>
+                            <td>${shortExchange}</td>
+                            <td>${item.settlement_count}</td>
+                            <td>${item.settlement_rate}%</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary" onclick="executeTrade('${item.symbol}', ${recommendedLeverage}, ${recommendedPosition}, '${longExchange}', '${shortExchange}')">
+                                    执行交易
+                                </button>
+                            </td>
+                        `;
+                        newOpp2Rows.push(row);
+                    } catch (error) {
+                        console.error(`处理交易对 ${item.symbol} 时出错:`, error);
+                    }
+                })).then(() => {
+                    // 使用DocumentFragment优化DOM操作
+                    const opp2Fragment = document.createDocumentFragment();
+                    newOpp2Rows.forEach(row => opp2Fragment.appendChild(row));
+                    opportunity2Body.innerHTML = '';
+                    opportunity2Body.appendChild(opp2Fragment);
+                });
             }
 
-            // 获取用户设置的仓位比例
-            const positionRatio = parseFloat(document.getElementById('positionRatioInput').value) || 0.5;
-
-            highRateTokens.forEach(async (item) => {
-                // 获取杠杆倍数
-                const leverageInfo = await getMaxLeverage(item.symbol);
-                const recommendedLeverage = leverageInfo.recommended_leverage;
-
-                // 获取账户余额
-                const binanceBalance = await getBinanceBalance();
-                const hlBalance = await getHyperliquidBalance();
-
-                // 计算建议仓位（使用用户设置的仓位比例）
-                const recommendedPosition = Math.floor(Math.min(binanceBalance, hlBalance) * recommendedLeverage * positionRatio);
-
-                // 计算预计利润
-                const tradingFee = 0.002; // 0.2%的总交易手续费
-                const profitRate = parseFloat(item.settlement_rate)/100 - tradingFee; // 结算费率减去交易手续费
-                const estimatedProfit = (profitRate * recommendedPosition).toFixed(2);
-
-                // 确定交易方向
-                const longExchange = item.hl_rate < 0 ? 'Hyperliquid' : 'Binance';
-                const shortExchange = item.hl_rate < 0 ? 'Binance' : 'Hyperliquid';
-
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${item.symbol}</td>
-                    <td class="${item.hl_rate >= 0 ? 'text-success' : 'text-danger'}">${item.hl_rate.toFixed(4)}%</td>
-                    <td class="${item.binance_rate !== null ? (item.binance_rate >= 0 ? 'text-success' : 'text-danger') : ''}">
-                        ${item.binance_rate !== null ? item.binance_rate.toFixed(4) + '%' : '暂无数据'}
-                    </td>
-                    <td>${item.settlement_count}</td>
-                    <td class="text-success">${item.settlement_rate}%</td>
-                    <td>${item.binance_next_funding || '-'}</td>
-                    <td>${item.next_funding_hl || '-'}</td>
-                    <td>${recommendedPosition} USDT</td>
-                    <td>${recommendedLeverage}x</td>
-                    <td class="${profitRate > 0 ? 'text-success' : 'text-danger'}">${estimatedProfit} USDT</td>
-                    <td>
-                        <button class="btn btn-primary btn-sm" onclick="startArbitrage2('${item.symbol}', ${recommendedPosition}, ${recommendedLeverage}, '${longExchange}', '${shortExchange}')">
-                            一键下单
-                        </button>
-                    </td>
-                `;
-                opportunity2Body.appendChild(row);
+            // 移除加载状态类
+            tables.forEach(table => {
+                table.classList.remove('table-loading');
             });
         }
 
