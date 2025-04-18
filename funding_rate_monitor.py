@@ -1,4 +1,5 @@
-from binance.um_futures import UMFutures
+from binance.client import Client
+from binance.enums import *
 import time
 from datetime import datetime
 import sys
@@ -13,12 +14,12 @@ class FundingRateMonitor:
     def __init__(self):
         """初始化资金费率监控器"""
         self.funding_rates: Dict[str, FundingRateInfo] = {}
-        self.rest_client = UMFutures()
+        self.rest_client = Client()
         
     def get_active_symbols(self) -> List[str]:
         """获取所有活跃的交易对"""
         try:
-            exchange_info = self.rest_client.exchange_info()
+            exchange_info = self.rest_client.futures_exchange_info()
             active_symbols = [
                 symbol['symbol'] for symbol in exchange_info['symbols']
                 if symbol['status'] == 'TRADING'  # 只获取正在交易的交易对
@@ -36,7 +37,7 @@ class FundingRateMonitor:
         """
         try:
             active_symbols = self.get_active_symbols()
-            premium_index = self.rest_client.mark_price()
+            premium_index = self.rest_client.futures_mark_price()
             
             # 过滤出活跃交易对的数据
             active_data = [item for item in premium_index if item['symbol'] in active_symbols]

@@ -3,14 +3,15 @@ import json
 import time
 import hmac
 import hashlib
-from binance.um_futures import UMFutures
+from binance.client import Client
+from binance.enums import *
 from typing import Dict, Optional, Union, List
 
 class BinanceTrader:
     def __init__(self):
         """初始化BinanceTrader"""
         self.load_config()
-        self.client = UMFutures(key=self.api_key, secret=self.api_secret)
+        self.client = Client(api_key=self.api_key, api_secret=self.api_secret)
         self.ws_base_url = "wss://fstream.binance.com/ws"
         
         # 定义订单类型常量
@@ -40,7 +41,7 @@ class BinanceTrader:
     def get_account_balance(self) -> float:
         """获取账户USDT余额"""
         try:
-            account_info = self.client.account()
+            account_info = self.client.futures_account()
             # 获取账户总余额
             for asset in account_info['assets']:
                 if asset['asset'] == 'USDT':
@@ -74,11 +75,11 @@ class BinanceTrader:
         """
         try:
             # 获取持仓风险信息
-            positions = self.client.get_position_risk(symbol=symbol)
+            positions = self.client.futures_position_information(symbol=symbol)
             print(f"获取到的持仓风险信息: {positions}")  # 添加调试信息
             
             # 获取当前杠杆倍数
-            leverage_info = self.client.leverage_brackets(symbol=symbol)
+            leverage_info = self.client.futures_leverage_bracket(symbol=symbol)
             current_leverage = int(leverage_info[0]['brackets'][0]['initialLeverage'])
             print(f"当前杠杆倍数: {current_leverage}")  # 添加调试信息
             
@@ -116,7 +117,7 @@ class BinanceTrader:
             Dict: 交易对信息，包含精度等信息
         """
         try:
-            exchange_info = self.client.exchange_info()
+            exchange_info = self.client.futures_exchange_info()
             for symbol_info in exchange_info['symbols']:
                 if symbol_info['symbol'] == symbol:
                     return {
@@ -173,7 +174,7 @@ class BinanceTrader:
             int: 最大杠杆倍数
         """
         try:
-            leverage_brackets = self.client.leverage_brackets(symbol=symbol)
+            leverage_brackets = self.client.futures_leverage_bracket(symbol=symbol)
             # 获取第一个档位的最大杠杆
             max_leverage = int(leverage_brackets[0]['brackets'][0]['initialLeverage'])
             return max_leverage
@@ -229,7 +230,7 @@ class BinanceTrader:
             
             # 设置杠杆
             try:
-                self.client.change_leverage(symbol=symbol, leverage=leverage)
+                self.client.futures_change_leverage(symbol=symbol, leverage=leverage)
             except Exception as e:
                 raise Exception(f"设置杠杆失败: {str(e)}")
 
@@ -244,7 +245,7 @@ class BinanceTrader:
             # 如果指定了USDT金额，使用U本位合约的下单参数
             if usdt_amount is not None:
                 # 获取当前价格
-                current_price = float(self.client.mark_price(symbol=symbol)['markPrice'])
+                current_price = float(self.client.futures_mark_price(symbol=symbol)['markPrice'])
                 # 计算合约数量（向下取整到最小精度）
                 symbol_info = self.get_symbol_info(symbol)
                 contract_qty = usdt_amount / current_price
@@ -267,7 +268,7 @@ class BinanceTrader:
             
             # 发送订单
             try:
-                response = self.client.new_order(**order_params)
+                response = self.client.futures_new_order(**order_params)
                 return response
             except Exception as e:
                 error_msg = str(e)
@@ -295,7 +296,7 @@ class BinanceTrader:
         """平仓指定交易对的持仓"""
         try:
             # 获取当前持仓信息
-            positions = self.client.get_position_risk(symbol=symbol)
+            positions = self.client.futures_position_information(symbol=symbol)
             if not positions:
                 raise ValueError(f"未找到{symbol}的持仓信息")
             
@@ -319,7 +320,7 @@ class BinanceTrader:
             print(f"平仓方向: {side}, 持仓数量: {abs(position_amt)}")
             
             # 执行市价平仓
-            response = self.client.new_order(
+            response = self.client.futures_new_order(
                 symbol=symbol,
                 side=side,
                 type='MARKET',
@@ -344,7 +345,7 @@ class BinanceTrader:
             float: 当前价格
         """
         try:
-            ticker = self.client.mark_price(symbol=symbol)
+            ticker = self.client.futures_mark_price(symbol=symbol)
             return float(ticker['markPrice'])
         except Exception as e:
             error_msg = str(e)
@@ -393,7 +394,7 @@ class BinanceTrader:
         """获取所有持仓信息"""
         try:
             # 使用get_position_risk获取所有持仓信息
-            positions = self.client.get_position_risk()
+            positions = self.client.futures_position_information()
             print(f"原始持仓数据: {positions}")  # 添加调试信息
             
             # 过滤出有持仓的仓位
@@ -447,7 +448,7 @@ class BinanceTrader:
         """
         try:
             # 获取用户的手续费率
-            commission_info = self.client.commission_rate(symbol="BTCUSDT")  # 可以用任意交易对，费率是统一的
+            commission_info = self.client.futures_commission_rate(symbol="BTCUSDT")  # 可以用任意交易对，费率是统一的
             print(f"获取到的手续费信息: {commission_info}")
             
             return {
