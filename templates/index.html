@@ -1,0 +1,1901 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>跨交易所资金费率套利监控</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding: 20px;
+        }
+        .card {
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .opportunity-card {
+            transition: transform 0.2s;
+        }
+        .opportunity-card:hover {
+            transform: translateY(-5px);
+        }
+        .positive-rate {
+            color: #28a745;
+        }
+        .negative-rate {
+            color: #dc3545;
+        }
+        .last-update {
+            color: #6c757d;
+            margin-bottom: 20px;
+        }
+        table {
+            background-color: white;
+        }
+        th {
+            background-color: #f8f9fa;
+        }
+        .search-box {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: white;
+            border-radius: 5px;
+        }
+        .threshold-setting {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .balance-card {
+            background-color: #fff;
+            border-left: 4px solid #28a745;
+        }
+        .position-card {
+            background-color: #fff;
+            border-left: 4px solid #007bff;
+        }
+        .position-profit {
+            font-weight: bold;
+        }
+        .profit-positive {
+            color: #28a745;
+        }
+        .profit-negative {
+            color: #dc3545;
+        }
+        /* Select2样式优化 */
+        .select2-container--bootstrap-5 .select2-selection {
+            min-height: 38px;
+            border: 1px solid #ced4da;
+        }
+        .select2-container--bootstrap-5 .select2-selection--single {
+            padding: 0.375rem 0.75rem;
+        }
+        .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
+            color: #212529;
+            line-height: 1.5;
+        }
+        .select2-container--bootstrap-5 .select2-search--dropdown .select2-search__field {
+            padding: 0.375rem 0.75rem;
+            border: 1px solid #ced4da;
+            border-radius: 0.25rem;
+        }
+        .select2-container--bootstrap-5 .select2-results__option--highlighted[aria-selected] {
+            background-color: #0d6efd;
+            color: #fff;
+        }
+        .select2-container--bootstrap-5 .select2-results__option {
+            padding: 0.375rem 0.75rem;
+        }
+        /* 调整select2在input-group中的显示 */
+        .input-group .select2-container {
+            flex: 1 1 auto;
+            width: auto !important;
+        }
+        .input-group .select2-container .select2-selection--single {
+            height: 38px;
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 账户信息展示 -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card balance-card">
+                    <div class="card-body">
+                        <h5 class="card-title">Binance账户余额</h5>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h3 class="mb-0" id="binanceBalance">0.00 USDT</h3>
+                                <small class="text-muted">可用保证金</small>
+                            </div>
+                            <button class="btn btn-sm btn-outline-success" onclick="refreshBinanceBalance()">
+                                刷新余额
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card balance-card">
+                    <div class="card-body">
+                        <h5 class="card-title">Hyperliquid账户余额</h5>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h3 class="mb-0" id="hyperliquidBalance">0.00 USDC</h3>
+                                <small class="text-muted">可用保证金</small>
+                            </div>
+                            <button class="btn btn-sm btn-outline-success" onclick="refreshHyperliquidBalance()">
+                                刷新余额
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 账户信息展示后，添加持仓信息展示 -->
+        <div class="row mb-4">
+            <!-- 币安持仓信息 -->
+            <div class="col-md-6">
+                <div class="card position-card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Binance持仓</h5>
+                        <button class="btn btn-sm btn-outline-primary" onclick="refreshBinancePositions()">
+                            刷新持仓
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="binancePositions">
+                            <div class="text-center text-muted">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Hyperliquid持仓信息 -->
+            <div class="col-md-6">
+                <div class="card position-card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Hyperliquid持仓</h5>
+                        <button class="btn btn-sm btn-outline-primary" onclick="refreshHyperliquidPositions()">
+                            刷新持仓
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="hyperliquidPositions">
+                            <div class="text-center text-muted">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 添加一键平仓按钮 -->
+        <div class="row mb-4">
+            <div class="col">
+                <button id="closeAllPositionsBtn" class="btn btn-danger btn-block w-100">
+                    一键平仓所有持仓
+                </button>
+            </div>
+        </div>
+
+        <!-- 账户信息展示后，添加下单功能卡片 -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">下单交易</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="orderForm" onsubmit="submitOrder(event)">
+                            <div class="row g-3">
+                                <!-- 交易所选择 -->
+                                <div class="col-md-2">
+                                    <label class="form-label">交易所</label>
+                                    <select class="form-select" id="orderExchange" required onchange="handleExchangeChange()">
+                                        <option value="binance">Binance</option>
+                                        <option value="hyperliquid">Hyperliquid</option>
+                                    </select>
+                                </div>
+                                
+                                <!-- 交易对选择 -->
+                                <div class="col-md-3">
+                                    <label class="form-label">交易对</label>
+                                    <div class="input-group">
+                                        <select class="form-select" id="orderSymbol" required>
+                                            <option value="">选择或输入交易对</option>
+                                        </select>
+                                        <button class="btn btn-outline-secondary" type="button" onclick="refreshSymbols()">
+                                            <i class="bi bi-arrow-clockwise"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <!-- 交易方向 -->
+                                <div class="col-md-2">
+                                    <label class="form-label">方向</label>
+                                    <select class="form-select" id="orderSide" required>
+                                        <option value="BUY">做多</option>
+                                        <option value="SELL">做空</option>
+                                    </select>
+                                </div>
+                                
+                                <!-- 杠杆倍数 -->
+                                <div class="col-md-2">
+                                    <label class="form-label">杠杆倍数</label>
+                                    <select class="form-select" id="orderLeverage" required>
+                                        <option value="">加载中...</option>
+                                    </select>
+                                </div>
+                                
+                                <!-- 订单类型 -->
+                                <div class="col-md-2">
+                                    <label class="form-label">订单类型</label>
+                                    <select class="form-select" id="orderType" onchange="togglePriceInput()" required>
+                                        <option value="MARKET">市价单</option>
+                                        <option value="LIMIT">限价单</option>
+                                    </select>
+                                </div>
+                                
+                                <!-- 价格输入框（限价单时显示） -->
+                                <div class="col-md-2" id="priceInputGroup" style="display: none;">
+                                    <label class="form-label">价格</label>
+                                    <input type="number" class="form-control" id="orderPrice" step="0.000001" placeholder="输入价格">
+                                </div>
+                                
+                                <!-- 数量输入框 -->
+                                <div class="col-md-2">
+                                    <label class="form-label">USDT金额</label>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" id="orderAmount" step="1" min="1" required placeholder="输入金额">
+                                        <span class="input-group-text">USDT</span>
+                                    </div>
+                                    <small class="form-text text-muted">请输入想要开仓的USDT金额</small>
+                                </div>
+                            </div>
+                            
+                            <!-- 下单按钮 -->
+                            <div class="mt-3">
+                                <button type="submit" class="btn btn-primary" id="submitOrderBtn">
+                                    确认下单
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="last-update">
+                最后更新时间: <span id="lastUpdate">2025/4/14 22:59:25</span>
+            </div>
+            <button class="btn btn-primary" onclick="fetchData()">
+                刷新数据
+            </button>
+        </div>
+
+        <!-- 合约数量统计 -->
+        <div class="alert alert-info mb-3">
+            <div class="row">
+                <div class="col-md-6">
+                    <strong>Hyperliquid合约数量:</strong> <span id="hlContractCount">0</span>
+                </div>
+                <div class="col-md-6">
+                    <strong>Binance合约数量:</strong> <span id="binanceContractCount">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 自动交易配置 -->
+        <div class="card mb-3">
+            <div class="card-header">
+                自动交易配置
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="thresholdInput">资金费率差阈值（%）：</label>
+                            <input type="number" class="form-control" id="thresholdInput" value="0.25" step="0.01">
+                            <small class="form-text text-muted">只显示资金费率差大于等于此值的交易对</small>
+                        </div>
+                        <div id="thresholdText" class="mt-2"></div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="positionRatioInput">仓位比例：</label>
+                            <input type="number" class="form-control" id="positionRatioInput" value="0.5" step="0.1" min="0.1" max="1">
+                            <small class="form-text text-muted">建议仓位 = 账户余额 × 杠杆倍数 × 仓位比例</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <div class="alert alert-info mb-0">
+                            <h6 class="alert-heading">交易所手续费率</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <strong>币安:</strong>
+                                    <ul class="list-unstyled mb-0">
+                                        <li>Maker: <span id="binanceMakerFee">0.02%</span></li>
+                                        <li>Taker: <span id="binanceTakerFee">0.05%</span></li>
+                                    </ul>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Hyperliquid:</strong>
+                                    <ul class="list-unstyled mb-0">
+                                        <li>Maker: <span id="hlMakerFee" class="text-success">-0.02%</span></li>
+                                        <li>Taker: <span id="hlTakerFee">0.05%</span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="alert alert-secondary">
+                    提示: 设置较高的阈值可以筛选出收益更高的套利机会，但可能减少可选择的交易对数量
+                </div>
+                <!-- 在自动交易配置区域添加表格结构 -->
+                <div id="currentOpportunity" class="mt-3">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>交易对</th>
+                                    <th>做多交易所</th>
+                                    <th>做多费率</th>
+                                    <th>做空交易所</th>
+                                    <th>做空费率</th>
+                                    <th>费率差</th>
+                                    <th>市安结算时间</th>
+                                    <th>HL结算时间</th>
+                                    <th>建议仓位</th>
+                                    <th>杠杆倍数</th>
+                                    <th>预计利润</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="currentOpportunityBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 自动交易配置2 -->
+        <div class="card mb-3">
+            <div class="card-header">
+                自动交易配置2（基于Hyperliquid高费率）
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h6 class="alert-heading">交易策略说明</h6>
+                    <ul class="mb-0">
+                        <li>当Hyperliquid费率为负时：Hyperliquid做多，币安做空</li>
+                        <li>当Hyperliquid费率为正时：Hyperliquid做空，币安做多</li>
+                        <li>只显示结算费率大于0.25%的交易对</li>
+                    </ul>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>交易对</th>
+                                <th>Hyperliquid费率</th>
+                                <th>币安费率</th>
+                                <th>结算次数</th>
+                                <th>结算费率</th>
+                                <th>币安结算时间</th>
+                                <th>HL结算时间</th>
+                                <th>建议仓位</th>
+                                <th>杠杆倍数</th>
+                                <th>预计利润</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="currentOpportunity2Body">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 套利机会分析 -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">套利机会分析（费率差最大的交易对）</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>序号</th>
+                                <th>交易对</th>
+                                <th>币安费率</th>
+                                <th>HL费率</th>
+                                <th>费率差</th>
+                                <th>币安结算时间</th>
+                                <th>HL结算时间</th>
+                                <th>套利策略</th>
+                            </tr>
+                        </thead>
+                        <tbody id="arbitrageOpportunities">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 套利机会分析2：Hyperliquid高费率代币 -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Hyperliquid高费率代币分析（前20名）</h5>
+                <h6 class="mb-0">只有在币安结算前的结算次数乘以费率大于0.25%的代币才有利润</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>序号</th>
+                                <th>交易对</th>
+                                <th>Hyperliquid费率</th>
+                                <th>币安费率</th>
+                                <th>费率差</th>
+                                <th>币安结算时间</th>
+                                <th>HL结算时间</th>
+                                <th>结算次数</th>
+                                <th>结算费率</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hlHighRateTokens">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 资金费率详细数据 -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">资金费率详细数据</h5>
+            </div>
+            <div class="card-body">
+                <div class="search-box">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="symbolSearch" 
+                                       placeholder="输入交易对名称(例如: BTCUSDT)">
+                                <button class="btn btn-outline-secondary" type="button" onclick="searchSymbol()">
+                                    查询
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="symbolDetails">
+                    <!-- 详细数据将在这里显示 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 在body结束标签前添加jQuery和select2的JS -->
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        // 初始化select2
+        $(document).ready(function() {
+            $('#orderSymbol').select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                placeholder: '选择或输入交易对',
+                allowClear: true,
+                tags: true,
+                createTag: function(params) {
+                    // 将输入转换为大写
+                    var term = $.trim(params.term).toUpperCase();
+                    
+                    // 如果不是以USDT结尾，自动添加
+                    if (!term.endsWith('USDT')) {
+                        term = term + 'USDT';
+                    }
+                    
+                    return {
+                        id: term,
+                        text: term,
+                        newTag: true
+                    }
+                },
+                language: {
+                    noResults: function() {
+                        return "未找到匹配的交易对";
+                    },
+                    searching: function() {
+                        return "搜索中...";
+                    }
+                }
+            });
+        });
+
+        // 修改loadSymbols函数
+        async function loadSymbols() {
+            try {
+                const response = await fetch('/api/binance/symbols');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    const symbolSelect = $('#orderSymbol');
+                    // 清除现有选项
+                    symbolSelect.empty();
+                    
+                    // 添加所有交易对
+                    data.data.forEach(symbol => {
+                        symbolSelect.append(new Option(symbol.symbol, symbol.symbol));
+                    });
+                    
+                    // 触发change事件以更新select2
+                    symbolSelect.trigger('change');
+                }
+            } catch (error) {
+                console.error('加载交易对失败:', error);
+            }
+        }
+
+        // 监听交易对选择变化
+        $('#orderSymbol').on('change', async function() {
+            const symbol = $(this).val();
+            const exchange = document.getElementById('orderExchange').value;
+            
+            if (symbol) {
+                // 根据交易所选择不同的处理方式
+                if (exchange === 'hyperliquid') {
+                    // 移除 USDT 后缀获取基础币种名称
+                    const baseCoin = symbol.replace('USDT', '');
+                    try {
+                        // 获取 Hyperliquid 的最大杠杆倍数
+                        const response = await fetch(`/api/hyperliquid/max_leverage/${baseCoin}`);
+                        const data = await response.json();
+                        
+                        if (data.status === 'success') {
+                            // 更新杠杆选择器
+                            const leverageSelect = document.getElementById('orderLeverage');
+                            leverageSelect.innerHTML = ''; // 清空现有选项
+                            
+                            // 添加可用的杠杆倍数选项
+                            const maxLeverage = data.data;
+                            for (let i = 1; i <= maxLeverage; i++) {
+                                const option = new Option(`${i}x`, i);
+                                leverageSelect.add(option);
+                            }
+                            
+                            // 默认选择最小杠杆
+                            leverageSelect.value = '1';
+                        }
+                    } catch (error) {
+                        console.error('获取最大杠杆倍数失败:', error);
+                    }
+                } else {
+                    // Binance 的处理逻辑保持不变
+                    await getSymbolInfo(symbol);
+                }
+            }
+        });
+
+        // 页面加载完成后加载交易对
+        $(document).ready(function() {
+            loadSymbols();
+        });
+
+        // 添加刷新交易对按钮的处理函数
+        function refreshSymbols() {
+            loadSymbols();
+        }
+
+        function formatRate(rate) {
+            return (rate > 0 ? '+' : '') + rate.toFixed(4) + '%';
+        }
+
+        function formatMoney(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD'
+            }).format(amount);
+        }
+
+        function formatNumber(num) {
+            return new Intl.NumberFormat('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(num);
+        }
+
+        async function analyzeFundingArbitrage(opportunities) {
+            // 获取两个交易所的余额
+            let binanceBalance = 0;
+            let hlBalance = 0;
+            
+            try {
+                const [binanceResponse, hlResponse] = await Promise.all([
+                    fetch('/api/binance/balance'),
+                    fetch('/api/hyperliquid/balance')
+                ]);
+                
+                const [binanceData, hlData] = await Promise.all([
+                    binanceResponse.json(),
+                    hlResponse.json()
+                ]);
+                
+                if (binanceData.status === 'success') {
+                    binanceBalance = binanceData.data.balance;
+                }
+                if (hlData.status === 'success') {
+                    hlBalance = hlData.data.balance;
+                }
+            } catch (error) {
+                console.error('获取余额失败:', error);
+            }
+            
+            // 分析套利机会并返回详细建议
+            const analyzedOpps = [];
+            
+            for (const opp of opportunities) {
+                const binanceRate = opp.binance_rate;
+                const hlRate = opp.hl_rate;
+                const binanceTime = new Date(opp.binance_next_funding);
+                const hlTime = new Date(opp.next_funding_hl);
+                
+                // 获取杠杆倍数
+                let leverage = 5; // 默认值
+                try {
+                    const leverageInfo = await getMaxLeverage(opp.symbol);
+                    leverage = leverageInfo.recommended_leverage;
+                } catch (error) {
+                    console.error('获取杠杆倍数失败:', error);
+                }
+                
+                // 计算每个交易所的最大可用仓位（余额 * 杠杆 * 0.5）
+                const binanceMaxPosition = binanceBalance * leverage * 0.5;
+                const hlMaxPosition = hlBalance * leverage * 0.5;
+                
+                // 取两个交易所中较小的值作为建议仓位
+                const recommendedPosition = Math.min(binanceMaxPosition, hlMaxPosition);
+                
+                // 确定哪个交易所的结算时间先到
+                const isHlFirst = hlTime < binanceTime;
+                
+                // 获取绝对值较大的费率及其所属交易所
+                const hl_abs_rate = Math.abs(hlRate);
+                const binance_abs_rate = Math.abs(binanceRate);
+                const hl_has_bigger_rate = hl_abs_rate > binance_abs_rate;
+                
+                let strategy = '';
+                let isGoodOpportunity = false;
+                let expectedProfit = 0;
+                
+                // 分析套利策略
+                if (hlRate <= 0 && binanceRate <= 0) {
+                    // 两个都是负费率
+                    if (hl_has_bigger_rate && isHlFirst) {
+                        strategy = `在Hyperliquid做多收取${hl_abs_rate.toFixed(4)}%资金费，在Binance做空支付${binance_abs_rate.toFixed(4)}%资金费`;
+                        isGoodOpportunity = true;
+                        expectedProfit = hl_abs_rate - binance_abs_rate;
+                    } else if (!hl_has_bigger_rate && !isHlFirst) {
+                        strategy = `在Binance做多收取${binance_abs_rate.toFixed(4)}%资金费，在Hyperliquid做空支付${hl_abs_rate.toFixed(4)}%资金费`;
+                        isGoodOpportunity = true;
+                        expectedProfit = binance_abs_rate - hl_abs_rate;
+                    }
+                } else if (hlRate >= 0 && binanceRate >= 0) {
+                    // 两个都是正费率
+                    if (hl_has_bigger_rate && isHlFirst) {
+                        strategy = `在Hyperliquid做空收取${hlRate.toFixed(4)}%资金费，在Binance做多支付${binanceRate.toFixed(4)}%资金费`;
+                        isGoodOpportunity = true;
+                        expectedProfit = hlRate - binanceRate;
+                    } else if (!hl_has_bigger_rate && !isHlFirst) {
+                        strategy = `在Binance做空收取${binanceRate.toFixed(4)}%资金费，在Hyperliquid做多支付${hlRate.toFixed(4)}%资金费`;
+                        isGoodOpportunity = true;
+                        expectedProfit = binanceRate - hlRate;
+                    }
+                } else {
+                    // 一正一负
+                    if (hlRate > 0) {
+                        if (isHlFirst) {
+                            strategy = `在Hyperliquid做空收取${hlRate.toFixed(4)}%资金费，在Binance做多收取${Math.abs(binanceRate).toFixed(4)}%资金费`;
+                            isGoodOpportunity = true;
+                            expectedProfit = hlRate + Math.abs(binanceRate);
+                        }
+                    } else if (binanceRate > 0) {
+                        if (!isHlFirst) {
+                            strategy = `在Binance做空收取${binanceRate.toFixed(4)}%资金费，在Hyperliquid做多收取${Math.abs(hlRate).toFixed(4)}%资金费`;
+                            isGoodOpportunity = true;
+                            expectedProfit = binanceRate + Math.abs(hlRate);
+                        }
+                    }
+                }
+                
+                analyzedOpps.push({
+                    ...opp,
+                    strategy,
+                    isGoodOpportunity,
+                    expectedProfit,
+                    recommendedPosition: Math.floor(recommendedPosition),
+                    leverage
+                });
+            }
+            
+            return analyzedOpps;
+        }
+
+        // 添加一个全局变量用于存储上一次的数据
+        let lastOpportunities = [];
+        let lastThreshold = 0;
+
+        // 修改updateCurrentOpportunity函数
+        async function updateCurrentOpportunity(opportunities, threshold) {
+            const currentOpportunityBody = document.getElementById('currentOpportunityBody');
+            
+            if (!opportunities || opportunities.length === 0) {
+                currentOpportunityBody.innerHTML = '<tr><td colspan="11" class="text-center">暂无满足条件的交易对</td></tr>';
+                return;
+            }
+
+            try {
+                // 根据阈值过滤机会
+                const validOpportunities = opportunities.filter(opp => {
+                    return Math.abs(opp.difference) >= Math.abs(threshold) && 
+                           opp.strategy && 
+                           !opp.strategy.includes('暂无套利机会');
+                });
+
+                if (validOpportunities.length === 0) {
+                    currentOpportunityBody.innerHTML = '<tr><td colspan="11" class="text-center">暂无满足条件的交易对</td></tr>';
+                    return;
+                }
+
+                // 更新显示的交易对数量
+                const thresholdText = document.getElementById('thresholdText');
+                if (thresholdText) {
+                    const comparisonSymbol = threshold >= 0 ? '>=' : '<=';
+                    thresholdText.textContent = `当前显示资金费率差${comparisonSymbol}${threshold}%的交易对，共 ${validOpportunities.length} 个`;
+                }
+
+                // 创建新的HTML内容
+                let newHTML = '';
+                for (const opp of validOpportunities) {
+                    // 从策略字符串中提取交易所信息
+                    const longMatch = opp.strategy.match(/在(Binance|Hyperliquid)做多/);
+                    const shortMatch = opp.strategy.match(/在(Binance|Hyperliquid)做空/);
+                    
+                    const longExchange = longMatch ? longMatch[1] : '';
+                    const shortExchange = shortMatch ? shortMatch[1] : '';
+
+                    // 根据做多做空交易所来确定对应的费率
+                    const longRate = longExchange === 'Binance' ? opp.binance_rate : opp.hl_rate;
+                    const shortRate = shortExchange === 'Binance' ? opp.binance_rate : opp.hl_rate;
+
+                    // 获取实际的杠杆倍数
+                    const leverageInfo = await getMaxLeverage(opp.symbol);
+                    const recommendedLeverage = leverageInfo.recommended_leverage;
+
+                    // 计算建议仓位
+                    const binanceBalance = await getBinanceBalance();
+                    const hlBalance = await getHyperliquidBalance();
+                    const positionRatio = parseFloat(document.getElementById('positionRatioInput').value) || 0.5;
+                    const recommendedPosition = Math.floor(Math.min(binanceBalance, hlBalance) * recommendedLeverage * positionRatio);
+
+                    // 计算预计利润
+                    const tradingFee = 0.002; // 0.2%的总交易手续费
+                    const profitRate = Math.abs(opp.difference/100) - tradingFee; // 费率差绝对值减去交易手续费
+                    const estimatedProfit = (profitRate * recommendedPosition).toFixed(2); // 预计利润 = 净利率 * 建议仓位
+
+                    newHTML += `
+                        <tr>
+                            <td>${opp.symbol}</td>
+                            <td>${longExchange}</td>
+                            <td class="${longRate >= 0 ? 'positive-rate' : 'negative-rate'}">${formatRate(longRate)}</td>
+                            <td>${shortExchange}</td>
+                            <td class="${shortRate >= 0 ? 'positive-rate' : 'negative-rate'}">${formatRate(shortRate)}</td>
+                            <td class="${opp.difference >= 0 ? 'positive-rate' : 'negative-rate'}">${formatRate(opp.difference)}</td>
+                            <td>${opp.binance_next_funding}</td>
+                            <td>${opp.next_funding_hl}</td>
+                            <td>${recommendedPosition} USDT</td>
+                            <td>${recommendedLeverage}x</td>
+                            <td class="${profitRate > 0 ? 'positive-rate' : 'negative-rate'}">${estimatedProfit} USDT</td>
+                            <td>
+                                <button class="btn btn-primary btn-sm" onclick="startArbitrage('${opp.symbol}', ${recommendedPosition}, ${recommendedLeverage}, '${longExchange}', '${shortExchange}')">
+                                    一键下单
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }
+
+                // 更新DOM
+                currentOpportunityBody.innerHTML = newHTML;
+            } catch (error) {
+                console.error('更新当前机会失败:', error);
+                currentOpportunityBody.innerHTML = '<tr><td colspan="11" class="text-center">更新失败</td></tr>';
+            }
+        }
+
+        // 修改refreshData函数
+        async function refreshData() {
+            try {
+                const response = await fetch('/api/funding_rates');
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    // 使用正确的输入框ID获取阈值
+                    const threshold = parseFloat(document.getElementById('thresholdInput').value) || 0.25;
+                    await updateCurrentOpportunity(result.data.opportunities, threshold);
+                    
+                    // 更新时间戳
+                    document.getElementById('lastUpdate').textContent = result.data.timestamp;
+                    // 更新合约数量
+                    document.getElementById('hlContractCount').textContent = result.data.contract_counts.hyperliquid;
+                    document.getElementById('binanceContractCount').textContent = result.data.contract_counts.binance;
+                    // 更新套利机会表格
+                    updateTable(result.data);
+                }
+            } catch (error) {
+                console.error('刷新数据失败:', error);
+            }
+        }
+
+        // 添加阈值输入框的change事件监听
+        document.addEventListener('DOMContentLoaded', function() {
+            const thresholdInput = document.getElementById('thresholdInput');
+            thresholdInput.addEventListener('change', function() {
+                refreshData();  // 当阈值改变时刷新数据
+            });
+            // ... 其他现有的初始化代码 ...
+            
+            const positionRatioInput = document.getElementById('positionRatioInput');
+            positionRatioInput.addEventListener('change', function() {
+                refreshData();
+            });
+        });
+
+        // 添加获取余额的辅助函数
+        async function getBinanceBalance() {
+            try {
+                const response = await fetch('/api/binance/balance');
+                const data = await response.json();
+                return data.status === 'success' ? data.data.balance : 0;
+            } catch (error) {
+                console.error('获取币安余额失败:', error);
+                return 0;
+            }
+        }
+
+        async function getHyperliquidBalance() {
+            try {
+                const response = await fetch('/api/hyperliquid/balance');
+                const data = await response.json();
+                return data.status === 'success' ? data.data.balance : 0;
+            } catch (error) {
+                console.error('获取Hyperliquid余额失败:', error);
+                return 0;
+            }
+        }
+
+        async function searchSymbol() {
+            const symbol = document.getElementById('symbolSearch').value.toUpperCase().replace('USDT', '');
+            if (!symbol) return;
+
+            try {
+                const response = await fetch('/api/funding_rates');
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    const contract = result.data.all_contracts[symbol];
+                    
+                    const detailsDiv = document.getElementById('symbolDetails');
+                    if (contract) {
+                        detailsDiv.innerHTML = `
+                            <table class="table mt-3">
+                                <tr>
+                                    <th>排名</th>
+                                    <th>交易对</th>
+                                    <th>做多交易所</th>
+                                    <th>做空交易所</th>
+                                    <th>做多费率</th>
+                                    <th>做空费率</th>
+                                    <th>费率差异</th>
+                                    <th style="color: red;">币安结算时间</th>
+                                    <th style="color: red;">hyperliquid结算时间</th>
+                                </tr>
+                                <tr>
+                                    <td>-</td>
+                                    <td>${contract.symbol}USDT</td>
+                                    <td>Binance</td>
+                                    <td>Hyperliquid</td>
+                                    <td class="${contract.binance_rate > 0 ? 'positive-rate' : 'negative-rate'}">
+                                        ${contract.binance_rate !== null ? formatRate(contract.binance_rate) : '暂无数据'}
+                                    </td>
+                                    <td class="${contract.hl_rate > 0 ? 'positive-rate' : 'negative-rate'}">
+                                        ${contract.hl_rate !== null ? formatRate(contract.hl_rate) : '暂无数据'}
+                                    </td>
+                                    <td class="${(contract.difference || 0) > 0 ? 'positive-rate' : 'negative-rate'}">
+                                        ${contract.difference !== null ? formatRate(contract.difference) : '-'}
+                                    </td>
+                                    <td>${contract.binance_next_funding || '-'}</td>
+                                    <td>${contract.next_funding_hl || '-'}</td>
+                                </tr>
+                            </table>
+                        `;
+                    } else {
+                        detailsDiv.innerHTML = '<div class="alert alert-warning">未找到该交易对的资金费率信息</div>';
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // 修改自动刷新逻辑
+        let autoRefreshInterval;
+
+        function startAutoRefresh() {
+            // 清除可能存在的旧定时器
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+            
+            // 立即执行一次
+            refreshData();
+            
+            // 设置60秒的刷新间隔
+            autoRefreshInterval = setInterval(refreshData, 60000);
+        }
+
+        // 停止自动刷新
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+
+        // 页面加载时自动获取持仓信息和余额
+        document.addEventListener('DOMContentLoaded', () => {
+            // 初始化数据
+            refreshBinanceBalance();
+            refreshHyperliquidBalance();
+            refreshBinancePositions();
+            refreshHyperliquidPositions();
+            fetchCommissionRates();
+            
+            // 启动自动刷新
+            startAutoRefresh();
+            
+            // 每30秒刷新一次持仓信息和余额
+            setInterval(() => {
+                refreshBinanceBalance();
+                refreshHyperliquidBalance();
+                refreshBinancePositions();
+                refreshHyperliquidPositions();
+            }, 30000);
+            
+            // 添加阈值输入框的change事件监听
+            const thresholdInput = document.getElementById('thresholdInput');
+            thresholdInput.addEventListener('change', function() {
+                refreshData();
+            });
+            
+            const positionRatioInput = document.getElementById('positionRatioInput');
+            positionRatioInput.addEventListener('change', function() {
+                refreshData();
+            });
+        });
+
+        // 刷新账户余额
+        async function refreshBinanceBalance() {
+            try {
+                const response = await fetch('/api/binance/balance');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    document.getElementById('binanceBalance').textContent = 
+                        formatNumber(data.data.balance) + ' USDT';
+                } else {
+                    alert('获取余额失败: ' + data.message);
+                }
+            } catch (error) {
+                console.error('获取余额出错:', error);
+                alert('获取余额时发生错误');
+            }
+        }
+
+        async function refreshHyperliquidBalance() {
+            try {
+                const response = await fetch('/api/hyperliquid/balance');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    document.getElementById('hyperliquidBalance').textContent = 
+                        formatNumber(data.data.balance) + ' USDC';
+                } else {
+                    alert('获取余额失败: ' + data.message);
+                }
+            } catch (error) {
+                console.error('获取余额出错:', error);
+                alert('获取余额时发生错误');
+            }
+        }
+
+        // 刷新持仓信息
+        async function refreshPositions() {
+            await refreshBinancePositions();
+            await refreshHyperliquidPositions();
+        }
+
+        // 刷新币安持仓信息
+        async function refreshBinancePositions() {
+            try {
+                const response = await fetch('/api/binance/position/all');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    updateBinancePositionsDisplay(data.data);
+                } else {
+                    console.error('获取币安持仓失败:', data.message);
+                    document.getElementById('binancePositions').innerHTML = 
+                        '<div class="alert alert-danger">获取持仓信息失败: ' + data.message + '</div>';
+                }
+            } catch (error) {
+                console.error('获取币安持仓失败:', error);
+                document.getElementById('binancePositions').innerHTML = 
+                    '<div class="alert alert-danger">获取持仓信息失败</div>';
+            }
+        }
+
+        // 刷新Hyperliquid持仓信息
+        async function refreshHyperliquidPositions() {
+            try {
+                const response = await fetch('/api/hyperliquid/position/all');
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    updateHyperliquidPositionsDisplay(data.data);
+                } else {
+                    console.error('获取Hyperliquid持仓失败:', data.message);
+                    document.getElementById('hyperliquidPositions').innerHTML = 
+                        '<div class="alert alert-danger">获取持仓信息失败: ' + data.message + '</div>';
+                }
+            } catch (error) {
+                console.error('获取Hyperliquid持仓失败:', error);
+                document.getElementById('hyperliquidPositions').innerHTML = 
+                    '<div class="alert alert-danger">获取持仓信息失败</div>';
+            }
+        }
+
+        // 更新币安持仓显示
+        function updateBinancePositionsDisplay(positions) {
+            const container = document.getElementById('binancePositions');
+            
+            if (!positions || positions.length === 0) {
+                container.innerHTML = '<div class="text-center text-muted">暂无持仓</div>';
+                return;
+            }
+            
+            const html = positions.map(position => {
+                const profitClass = parseFloat(position.unrealizedProfit) >= 0 ? 'text-success' : 'text-danger';
+                const sideClass = position.positionSide === 'LONG' ? 'text-success' : 'text-danger';
+                
+                return `
+                    <div class="border-bottom py-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-0">${position.symbol}</h6>
+                                <small class="${sideClass}">${position.positionSide === 'LONG' ? '多仓' : '空仓'} ${position.leverage}X</small>
+                            </div>
+                            <div class="text-end">
+                                <div class="${profitClass}">
+                                    ${parseFloat(position.unrealizedProfit).toFixed(2)} USDT
+                                </div>
+                                <small class="text-muted">
+                                    数量: ${position.positionAmt} | 开仓价: ${parseFloat(position.entryPrice).toFixed(4)}
+                                </small>
+                                <div class="text-muted">
+                                    <small>持仓价值: ${parseFloat(position.notional).toFixed(2)} USDT</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-danger" onclick="closeBinancePosition('${position.symbol}')">
+                                平仓
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            container.innerHTML = html;
+        }
+
+        // 更新Hyperliquid持仓显示
+        function updateHyperliquidPositionsDisplay(positions) {
+            const container = document.getElementById('hyperliquidPositions');
+            
+            if (!positions || positions.length === 0) {
+                container.innerHTML = '<div class="text-center text-muted">暂无持仓</div>';
+                return;
+            }
+            
+            const html = positions.map(position => {
+                const profitClass = parseFloat(position.unrealizedProfit) >= 0 ? 'text-success' : 'text-danger';
+                const sideClass = position.positionSide === 'LONG' ? 'text-success' : 'text-danger';
+                
+                return `
+                    <div class="border-bottom py-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-0">${position.symbol}</h6>
+                                <small class="${sideClass}">${position.positionSide === 'LONG' ? '多仓' : '空仓'} ${position.leverage}X</small>
+                            </div>
+                            <div class="text-end">
+                                <div class="${profitClass}">
+                                    ${parseFloat(position.unrealizedProfit).toFixed(2)} USDC
+                                </div>
+                                <small class="text-muted">
+                                    数量: ${position.positionAmt} | 开仓价: ${parseFloat(position.entryPrice).toFixed(4)}
+                                </small>
+                                <div class="text-muted">
+                                    <small>持仓价值: ${parseFloat(position.notional).toFixed(2)} USDC</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-2">
+                            <button class="btn btn-sm btn-danger" onclick="closeHyperliquidPosition('${position.symbol}')">
+                                平仓
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            container.innerHTML = html;
+        }
+
+        // 修改币安平仓功能
+        async function closeBinancePosition(symbol) {
+            if (!confirm(`确定要平掉币安的 ${symbol} 持仓吗？`)) {
+                return;
+            }
+            
+            try {
+                // 先获取当前持仓信息
+                const positionResponse = await fetch(`/api/binance/position/${symbol}`);
+                const positionData = await positionResponse.json();
+                
+                if (positionData.status === 'success' && positionData.data) {
+                    const position = positionData.data;
+                    const positionAmt = parseFloat(position.positionAmt);
+                    
+                    if (positionAmt === 0) {
+                        alert('该交易对没有持仓');
+                        return;
+                    }
+                    
+                    // 发送平仓请求
+                    const response = await fetch(`/api/binance/position/${symbol}/close`, {
+                        method: 'POST'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.status === 'success') {
+                        alert('平仓成功');
+                        refreshBinancePositions();
+                    } else {
+                        alert('平仓失败: ' + result.message);
+                    }
+                } else {
+                    alert('获取持仓信息失败');
+                }
+            } catch (error) {
+                console.error('平仓失败:', error);
+                alert('平仓操作失败: ' + error.message);
+            }
+        }
+
+        // 修改一键平仓所有持仓功能
+        async function closeAllPositions() {
+            if (!confirm('确认要平掉所有持仓吗？此操作不可撤销。')) {
+                return;
+            }
+            
+            try {
+                // 获取所有币安持仓
+                const binancePositionsResponse = await fetch('/api/binance/position/all');
+                const binancePositionsData = await binancePositionsResponse.json();
+                
+                let successCount = 0;
+                let errorMessages = [];
+                
+                // 处理币安持仓
+                if (binancePositionsData.status === 'success') {
+                    const positions = binancePositionsData.data;
+                    for (const position of positions) {
+                        if (parseFloat(position.positionAmt) === 0) continue;
+                        
+                        try {
+                            // 发送平仓请求
+                            const response = await fetch(`/api/binance/position/${position.symbol}/close`, {
+                                method: 'POST'
+                            });
+                            
+                            const result = await response.json();
+                            
+                            if (result.status === 'success') {
+                                successCount++;
+                            } else {
+                                errorMessages.push(`币安${position.symbol}平仓失败: ${result.message}`);
+                            }
+                        } catch (error) {
+                            errorMessages.push(`币安${position.symbol}平仓失败: ${error.message}`);
+                        }
+                    }
+                } else {
+                    errorMessages.push(`获取币安持仓失败: ${binancePositionsData.message}`);
+                }
+                
+                // 处理Hyperliquid持仓
+                const hyperliquidResponse = await fetch('/api/hyperliquid/position/close_all', {
+                    method: 'POST'
+                });
+                
+                const hyperliquidResult = await hyperliquidResponse.json();
+                if (hyperliquidResult.status === 'success') {
+                    const hlPositions = hyperliquidResult.data;
+                    hlPositions.forEach(pos => {
+                        if (pos.status === 'success') {
+                            successCount++;
+                        } else {
+                            errorMessages.push(`Hyperliquid${pos.symbol}平仓失败: ${pos.message}`);
+                        }
+                    });
+                } else {
+                    errorMessages.push(`Hyperliquid平仓失败: ${hyperliquidResult.message}`);
+                }
+                
+                // 显示结果
+                if (errorMessages.length > 0) {
+                    alert(`平仓完成\n成功: ${successCount}个\n失败: ${errorMessages.join('\n')}`);
+                } else if (successCount > 0) {
+                    alert(`成功平掉${successCount}个持仓`);
+                } else {
+                    alert('没有需要平仓的持仓');
+                }
+                
+                // 刷新持仓信息
+                await refreshPositions();
+                
+            } catch (error) {
+                console.error('平仓失败:', error);
+                alert('平仓操作失败: ' + error.message);
+            }
+        }
+
+        // Hyperliquid平仓功能
+        async function closeHyperliquidPosition(symbol) {
+            if (!confirm(`确定要平掉Hyperliquid的 ${symbol} 持仓吗？`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/hyperliquid/position/${symbol}/close`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    alert('平仓成功');
+                    refreshHyperliquidPositions();
+                } else {
+                    alert('平仓失败: ' + data.message);
+                }
+            } catch (error) {
+                console.error('平仓失败:', error);
+                alert('平仓操作失败');
+            }
+        }
+
+        // 切换价格输入框显示状态
+        function togglePriceInput() {
+            const orderType = document.getElementById('orderType').value;
+            const priceInputGroup = document.getElementById('priceInputGroup');
+            const priceInput = document.getElementById('orderPrice');
+            
+            if (orderType === 'LIMIT') {
+                priceInputGroup.style.display = 'block';
+                priceInput.required = true;
+            } else {
+                priceInputGroup.style.display = 'none';
+                priceInput.required = false;
+            }
+        }
+
+        // 获取交易对信息
+        async function getSymbolInfo(symbol) {
+            try {
+                const response = await fetch(`/api/binance/symbol_info/${symbol}`);
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    // 获取最大杠杆倍数
+                    const leverageResponse = await fetch(`/api/binance/max_leverage/${symbol}`);
+                    const leverageData = await leverageResponse.json();
+                    
+                    if (leverageData.status === 'success') {
+                        // 更新杠杆选择器
+                        const leverageSelect = document.getElementById('orderLeverage');
+                        leverageSelect.innerHTML = ''; // 清空现有选项
+                        
+                        // 添加常用的杠杆倍数选项，但不超过最大值
+                        const commonLeverages = [1, 2, 3, 5, 10, 20, 50, 75, 100, 125];
+                        const maxLeverage = leverageData.data;
+                        
+                        commonLeverages.forEach(leverage => {
+                            if (leverage <= maxLeverage) {
+                                const option = new Option(`${leverage}x`, leverage);
+                                leverageSelect.add(option);
+                            }
+                        });
+                        
+                        // 如果最大杠杆不在常用值中，添加它
+                        if (!commonLeverages.includes(maxLeverage)) {
+                            const option = new Option(`${maxLeverage}x`, maxLeverage);
+                            leverageSelect.add(option);
+                        }
+                        
+                        // 默认选择中等杠杆
+                        const defaultLeverage = Math.min(20, maxLeverage);
+                        leverageSelect.value = defaultLeverage;
+                    }
+                    
+                    return data.data;
+                }
+            } catch (error) {
+                console.error('获取交易对信息失败:', error);
+                // 如果获取失败，设置默认的杠杆选项
+                const leverageSelect = document.getElementById('orderLeverage');
+                leverageSelect.innerHTML = `
+                    <option value="1">1x</option>
+                    <option value="2">2x</option>
+                    <option value="3">3x</option>
+                    <option value="5">5x</option>
+                    <option value="10" selected>10x</option>
+                `;
+            }
+            return null;
+        }
+
+        // 处理交易所切换
+        async function handleExchangeChange() {
+            const exchange = document.getElementById('orderExchange').value;
+            const symbolSelect = $('#orderSymbol');
+            
+            // 清空并禁用交易对选择器
+            symbolSelect.empty();
+            symbolSelect.append(new Option('加载中...', ''));
+            symbolSelect.prop('disabled', true);
+            
+            try {
+                const response = await fetch(`/api/${exchange}/symbols`);
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    symbolSelect.empty();
+                    symbolSelect.append(new Option('选择交易对', ''));
+                    
+                    // 添加所有交易对
+                    data.data.forEach(symbol => {
+                        // 对于 Hyperliquid，移除 USDT 后缀
+                        const displaySymbol = exchange === 'hyperliquid' ? 
+                            symbol.symbol.replace('USDT', '') : 
+                            symbol.symbol;
+                            
+                        symbolSelect.append(new Option(displaySymbol, symbol.symbol));
+                    });
+                    
+                    // 触发 change 事件以更新 select2
+                    symbolSelect.trigger('change');
+                }
+            } catch (error) {
+                console.error('加载交易对失败:', error);
+                symbolSelect.empty();
+                symbolSelect.append(new Option('加载失败', ''));
+            } finally {
+                symbolSelect.prop('disabled', false);
+            }
+        }
+
+        // 修改submitOrder函数
+        async function submitOrder(event) {
+            event.preventDefault();
+            
+            if (!confirm('确认要提交这笔订单吗？')) {
+                return;
+            }
+            
+            const submitBtn = document.getElementById('submitOrderBtn');
+            submitBtn.disabled = true;
+            
+            try {
+                const exchange = document.getElementById('orderExchange').value;
+                const symbol = document.getElementById('orderSymbol').value;
+                const amount = parseFloat(document.getElementById('orderAmount').value);
+                
+                const orderData = {
+                    symbol: symbol,
+                    side: document.getElementById('orderSide').value,
+                    quantity: amount,  // USDT金额
+                    leverage: parseInt(document.getElementById('orderLeverage').value),
+                    order_type: document.getElementById('orderType').value
+                };
+                
+                // 如果是限价单，添加价格
+                if (orderData.order_type === 'LIMIT') {
+                    orderData.price = parseFloat(document.getElementById('orderPrice').value);
+                }
+                
+                const response = await fetch(`/api/${exchange}/order`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(orderData)
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    alert('下单成功！');
+                    // 刷新持仓信息
+                    refreshPositions();
+                    // 重置表单
+                    document.getElementById('orderForm').reset();
+                } else {
+                    alert('下单失败: ' + result.message);
+                }
+            } catch (error) {
+                console.error('下单出错:', error);
+                alert('下单时发生错误: ' + error.message);
+            } finally {
+                submitBtn.disabled = false;
+            }
+        }
+
+        // 添加获取杠杆倍数的函数
+        async function getMaxLeverage(symbol) {
+            try {
+                // 处理不同交易所的合约格式
+                const baseSymbol = symbol.replace('USDT', '');
+                const binanceSymbol = `${baseSymbol}USDT`;  // 币安格式：BSVUSDT
+                const hlSymbol = `${baseSymbol}/USDC:USDC`;  // Hyperliquid格式：BSV/USDC:USDC
+                
+                // 分别获取两个交易所的杠杆倍数
+                const binanceResponse = await fetch(`/api/binance/max_leverage/${binanceSymbol}`);
+                const hlResponse = await fetch(`/api/hyperliquid/max_leverage/${hlSymbol}`);
+                
+                const binanceData = await binanceResponse.json();
+                const hlData = await hlResponse.json();
+                
+                console.log('获取杠杆倍数结果:', {
+                    symbol: symbol,
+                    binanceSymbol: binanceSymbol,
+                    hlSymbol: hlSymbol,
+                    binanceData: binanceData,
+                    hlData: hlData
+                });
+                
+                if (binanceData.status === 'success' && hlData.status === 'success') {
+                    // 取两个交易所中较小的杠杆倍数作为推荐杠杆
+                    const recommendedLeverage = Math.min(binanceData.data, hlData.data);
+                    return {
+                        binance_leverage: binanceData.data,
+                        hyperliquid_leverage: hlData.data,
+                        recommended_leverage: recommendedLeverage
+                    };
+                }
+                
+                // 如果只有一个交易所返回成功，使用该交易所的杠杆倍数
+                if (binanceData.status === 'success') {
+                    return {
+                        binance_leverage: binanceData.data,
+                        hyperliquid_leverage: binanceData.data,
+                        recommended_leverage: binanceData.data
+                    };
+                }
+                
+                if (hlData.status === 'success') {
+                    return {
+                        binance_leverage: hlData.data,
+                        hyperliquid_leverage: hlData.data,
+                        recommended_leverage: hlData.data
+                    };
+                }
+                
+                // 如果都失败了，返回默认值
+                console.error('获取杠杆倍数失败，使用默认值');
+                return {
+                    binance_leverage: 5,
+                    hyperliquid_leverage: 5,
+                    recommended_leverage: 5
+                };
+            } catch (error) {
+                console.error('获取杠杆倍数失败:', error);
+                return {
+                    binance_leverage: 5,
+                    hyperliquid_leverage: 5,
+                    recommended_leverage: 5
+                };
+            }
+        }
+
+        // 修改更新表格的函数
+        function updateTable(data) {
+            // 更新第一个表格（原有逻辑）
+            const tbody = document.getElementById('arbitrageOpportunities');
+            tbody.innerHTML = '';
+
+            if (!data.opportunities || data.opportunities.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center">暂无套利机会</td></tr>';
+                return;
+            }
+
+            // 按费率差的绝对值从大到小排序
+            const sortedOpportunities = data.opportunities.sort((a, b) => 
+                Math.abs(b.difference) - Math.abs(a.difference)
+            );
+
+            sortedOpportunities.forEach((item, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td>${item.symbol}</td>
+                    <td class="${item.binance_rate >= 0 ? 'text-success' : 'text-danger'}">${item.binance_rate.toFixed(4)}%</td>
+                    <td class="${item.hl_rate >= 0 ? 'text-success' : 'text-danger'}">${item.hl_rate.toFixed(4)}%</td>
+                    <td class="${item.difference >= 0 ? 'text-success' : 'text-danger'}">${item.difference.toFixed(4)}%</td>
+                    <td>${item.binance_next_funding}</td>
+                    <td>${item.next_funding_hl}</td>
+                    <td>${item.strategy}</td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            // 更新第二个表格（Hyperliquid高费率代币）
+            const hlTbody = document.getElementById('hlHighRateTokens');
+            hlTbody.innerHTML = '';
+
+            if (!data.all_contracts) {
+                hlTbody.innerHTML = '<tr><td colspan="9" class="text-center">暂无数据</td></tr>';
+                return;
+            }
+
+            // 获取当前时间
+            const now = new Date();
+            const currentHour = now.getHours();
+
+            // 筛选出Hyperliquid有费率的代币
+            const hlTokens = Object.entries(data.all_contracts)
+                .filter(([_, contract]) => contract.hl_rate !== null)
+                .map(([symbol, contract]) => {
+                    // 计算结算次数
+                    let settlementCount = 0;
+                    if (contract.binance_next_funding && contract.binance_next_funding !== '-') {
+                        const binanceTime = new Date(contract.binance_next_funding);
+                        const binanceHour = binanceTime.getHours();
+                        
+                        // 计算从当前时间到币安结算时间之间的整点次数
+                        if (currentHour < binanceHour) {
+                            settlementCount = binanceHour - currentHour - 1;
+                        } else if (currentHour > binanceHour) {
+                            settlementCount = (24 - currentHour) + binanceHour - 1;
+                        }
+                        
+                        // 确保结算次数不为负数
+                        settlementCount = Math.max(0, settlementCount);
+                    }
+
+                    // 计算结算费率
+                    const settlementRate = (Math.abs(contract.hl_rate) * settlementCount).toFixed(4);
+
+                    return {
+                        symbol,
+                        hl_rate: contract.hl_rate,
+                        binance_rate: contract.binance_rate,
+                        difference: contract.difference,
+                        binance_next_funding: contract.binance_next_funding,
+                        next_funding_hl: contract.next_funding_hl,
+                        settlement_count: settlementCount,
+                        settlement_rate: settlementRate,
+                        strategy: contract.strategy || "暂无套利机会"
+                    };
+                });
+
+            // 按Hyperliquid费率绝对值从大到小排序
+            const sortedHlTokens = hlTokens.sort((a, b) => 
+                Math.abs(b.hl_rate) - Math.abs(a.hl_rate)
+            ).slice(0, 20); // 只取前20个
+
+            sortedHlTokens.forEach((item, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${index + 1}</td>
+                    <td>${item.symbol}</td>
+                    <td class="${item.hl_rate >= 0 ? 'text-success' : 'text-danger'}">${item.hl_rate.toFixed(4)}%</td>
+                    <td class="${item.binance_rate !== null ? (item.binance_rate >= 0 ? 'text-success' : 'text-danger') : ''}">
+                        ${item.binance_rate !== null ? item.binance_rate.toFixed(4) + '%' : '暂无数据'}
+                    </td>
+                    <td class="${item.difference !== null ? (item.difference >= 0 ? 'text-success' : 'text-danger') : ''}">
+                        ${item.difference !== null ? item.difference.toFixed(4) + '%' : '-'}
+                    </td>
+                    <td>${item.binance_next_funding || '-'}</td>
+                    <td>${item.next_funding_hl || '-'}</td>
+                    <td>${item.settlement_count}</td>
+                    <td class="${parseFloat(item.settlement_rate) >= 0.25 ? 'text-success' : ''}">${item.settlement_rate}%</td>
+                `;
+                hlTbody.appendChild(row);
+            });
+
+            // 更新自动交易配置2表格
+            const opportunity2Body = document.getElementById('currentOpportunity2Body');
+            opportunity2Body.innerHTML = '';
+
+            // 筛选出结算费率大于0.25%的交易对
+            const highRateTokens = sortedHlTokens.filter(item => 
+                parseFloat(item.settlement_rate) >= 0.25
+            );
+
+            if (highRateTokens.length === 0) {
+                opportunity2Body.innerHTML = '<tr><td colspan="11" class="text-center">暂无满足条件的交易对</td></tr>';
+                return;
+            }
+
+            // 获取用户设置的仓位比例
+            const positionRatio = parseFloat(document.getElementById('positionRatioInput').value) || 0.5;
+
+            highRateTokens.forEach(async (item) => {
+                // 获取杠杆倍数
+                const leverageInfo = await getMaxLeverage(item.symbol);
+                const recommendedLeverage = leverageInfo.recommended_leverage;
+
+                // 获取账户余额
+                const binanceBalance = await getBinanceBalance();
+                const hlBalance = await getHyperliquidBalance();
+
+                // 计算建议仓位（使用用户设置的仓位比例）
+                const recommendedPosition = Math.floor(Math.min(binanceBalance, hlBalance) * recommendedLeverage * positionRatio);
+
+                // 计算预计利润
+                const tradingFee = 0.002; // 0.2%的总交易手续费
+                const profitRate = parseFloat(item.settlement_rate)/100 - tradingFee; // 结算费率减去交易手续费
+                const estimatedProfit = (profitRate * recommendedPosition).toFixed(2);
+
+                // 确定交易方向
+                const longExchange = item.hl_rate < 0 ? 'Hyperliquid' : 'Binance';
+                const shortExchange = item.hl_rate < 0 ? 'Binance' : 'Hyperliquid';
+
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item.symbol}</td>
+                    <td class="${item.hl_rate >= 0 ? 'text-success' : 'text-danger'}">${item.hl_rate.toFixed(4)}%</td>
+                    <td class="${item.binance_rate !== null ? (item.binance_rate >= 0 ? 'text-success' : 'text-danger') : ''}">
+                        ${item.binance_rate !== null ? item.binance_rate.toFixed(4) + '%' : '暂无数据'}
+                    </td>
+                    <td>${item.settlement_count}</td>
+                    <td class="text-success">${item.settlement_rate}%</td>
+                    <td>${item.binance_next_funding || '-'}</td>
+                    <td>${item.next_funding_hl || '-'}</td>
+                    <td>${recommendedPosition} USDT</td>
+                    <td>${recommendedLeverage}x</td>
+                    <td class="${profitRate > 0 ? 'text-success' : 'text-danger'}">${estimatedProfit} USDT</td>
+                    <td>
+                        <button class="btn btn-primary btn-sm" onclick="startArbitrage2('${item.symbol}', ${recommendedPosition}, ${recommendedLeverage}, '${longExchange}', '${shortExchange}')">
+                            一键下单
+                        </button>
+                    </td>
+                `;
+                opportunity2Body.appendChild(row);
+            });
+        }
+
+        // 添加获取手续费率的函数
+        async function fetchCommissionRates() {
+            try {
+                // 获取币安手续费率
+                const binanceResponse = await fetch('/api/binance/commission_rate');
+                const binanceData = await binanceResponse.json();
+                if (binanceData.status === 'success') {
+                    document.getElementById('binanceMakerFee').textContent = (binanceData.data.maker * 100).toFixed(2) + '%';
+                    document.getElementById('binanceTakerFee').textContent = (binanceData.data.taker * 100).toFixed(2) + '%';
+                }
+
+                // 获取Hyperliquid手续费率
+                const hlResponse = await fetch('/api/hyperliquid/commission_rate');
+                const hlData = await hlResponse.json();
+                if (hlData.status === 'success') {
+                    const hlMakerFee = document.getElementById('hlMakerFee');
+                    const hlTakerFee = document.getElementById('hlTakerFee');
+                    
+                    hlMakerFee.textContent = (hlData.data.maker * 100).toFixed(2) + '%';
+                    hlTakerFee.textContent = (hlData.data.taker * 100).toFixed(2) + '%';
+                    
+                    // 如果是负数（返佣），显示为绿色
+                    if (hlData.data.maker < 0) {
+                        hlMakerFee.classList.add('text-success');
+                    }
+                }
+            } catch (error) {
+                console.error('获取手续费率失败:', error);
+            }
+        }
+
+        function updateThresholdText(value) {
+            const thresholdText = document.getElementById('thresholdText');
+            if (thresholdText) {
+                thresholdText.textContent = `当前显示资金费率差 ≥ ${value}% 的交易对，共 ${document.getElementById('currentOpportunityBody').getElementsByTagName('tr').length} 个`;
+            }
+        }
+
+        // 添加placeOrders函数
+        async function placeOrders(symbol, leverage, position, longExchange, shortExchange) {
+            if (!confirm(`确认要执行以下操作吗？\n交易对: ${symbol}\n杠杆: ${leverage}x\n仓位: ${position} USDT\n做多交易所: ${longExchange}\n做空交易所: ${shortExchange}`)) {
+                return;
+            }
+
+            try {
+                // 准备订单数据
+                const orderData = {
+                    symbol: symbol + 'USDT',  // 添加USDT后缀
+                    leverage: leverage,
+                    quantity: position,  // USDT金额
+                    order_type: 'MARKET'
+                };
+
+                // 并行发送做多和做空订单
+                const [longOrder, shortOrder] = await Promise.all([
+                    // 做多订单
+                    fetch(`/api/${longExchange.toLowerCase()}/order`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            ...orderData,
+                            side: 'BUY'
+                        })
+                    }).then(res => res.json()),
+
+                    // 做空订单
+                    fetch(`/api/${shortExchange.toLowerCase()}/order`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            ...orderData,
+                            side: 'SELL'
+                        })
+                    }).then(res => res.json())
+                ]);
+
+                // 检查订单结果
+                if (longOrder.status === 'success' && shortOrder.status === 'success') {
+                    alert('套利订单执行成功！');
+                    // 刷新持仓信息
+                    await refreshPositions();
+                } else {
+                    let errorMsg = '套利订单执行失败:\n';
+                    if (longOrder.status !== 'success') {
+                        errorMsg += `做多订单失败: ${longOrder.message}\n`;
+                    }
+                    if (shortOrder.status !== 'success') {
+                        errorMsg += `做空订单失败: ${shortOrder.message}`;
+                    }
+                    throw new Error(errorMsg);
+                }
+            } catch (error) {
+                console.error('下单失败:', error);
+                throw error;
+            }
+        }
+
+        // 添加startArbitrage函数
+        async function startArbitrage(symbol, position, leverage, longExchange, shortExchange) {
+            try {
+                // 调用下单函数
+                await placeOrders(symbol, leverage, position, longExchange, shortExchange);
+            } catch (error) {
+                console.error('套利下单失败:', error);
+                alert('套利下单失败: ' + error.message);
+            }
+        }
+
+        // 修改refreshData函数
+        async function refreshData() {
+            try {
+                const response = await fetch('/api/funding_rates');
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    // 使用正确的输入框ID获取阈值
+                    const threshold = parseFloat(document.getElementById('thresholdInput').value) || 0.25;
+                    await updateCurrentOpportunity(result.data.opportunities, threshold);
+                    
+                    // 更新时间戳
+                    document.getElementById('lastUpdate').textContent = result.data.timestamp;
+                    // 更新合约数量
+                    document.getElementById('hlContractCount').textContent = result.data.contract_counts.hyperliquid;
+                    document.getElementById('binanceContractCount').textContent = result.data.contract_counts.binance;
+                    // 更新套利机会表格
+                    updateTable(result.data);
+                }
+            } catch (error) {
+                console.error('刷新数据失败:', error);
+            }
+        }
+        
+        // 添加按钮点击事件监听
+        document.getElementById('closeAllPositionsBtn').addEventListener('click', closeAllPositions);
+
+        // 添加仓位比例输入框的change事件监听
+        document.addEventListener('DOMContentLoaded', function() {
+            // ... existing code ...
+            
+            const positionRatioInput = document.getElementById('positionRatioInput');
+            positionRatioInput.addEventListener('change', function() {
+                // 当仓位比例改变时，刷新数据
+                refreshData();
+            });
+        });
+
+        // 添加startArbitrage2函数
+        async function startArbitrage2(symbol, position, leverage, longExchange, shortExchange) {
+            try {
+                // 根据Hyperliquid费率确定交易方向
+                const response = await fetch('/api/funding_rates');
+                const result = await response.json();
+                
+                if (result.status === 'success' && result.data.all_contracts) {
+                    const contract = result.data.all_contracts[symbol];
+                    if (contract) {
+                        // 如果Hyperliquid费率为负，则在Hyperliquid做多，在Binance做空
+                        // 如果Hyperliquid费率为正，则在Hyperliquid做空，在Binance做多
+                        const hlRate = contract.hl_rate;
+                        
+                        if (hlRate !== null) {
+                            const actualLongExchange = hlRate < 0 ? 'Hyperliquid' : 'Binance';
+                            const actualShortExchange = hlRate < 0 ? 'Binance' : 'Hyperliquid';
+                            
+                            // 调用下单函数
+                            await placeOrders(symbol, leverage, position, actualLongExchange, actualShortExchange);
+                        } else {
+                            throw new Error('无法获取Hyperliquid费率');
+                        }
+                    } else {
+                        throw new Error('未找到该交易对的费率信息');
+                    }
+                } else {
+                    throw new Error('获取费率数据失败');
+                }
+            } catch (error) {
+                console.error('套利下单失败:', error);
+                alert('套利下单失败: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html> 
