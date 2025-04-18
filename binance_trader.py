@@ -208,11 +208,6 @@ class BinanceTrader:
             if side not in ['BUY', 'SELL']:
                 raise ValueError("交易方向必须是 'BUY' 或 'SELL'")
             
-            # 获取最大杠杆倍数并验证
-            max_leverage = self.get_max_leverage(symbol)
-            if not isinstance(leverage, int) or leverage < 1 or leverage > max_leverage:
-                raise ValueError(f"杠杆倍数必须在1-{max_leverage}之间")
-            
             if order_type not in [self.ORDER_TYPE_MARKET, self.ORDER_TYPE_LIMIT]:
                 raise ValueError("订单类型必须是 'MARKET' 或 'LIMIT'")
             
@@ -228,12 +223,6 @@ class BinanceTrader:
             if usdt_amount is not None and usdt_amount <= 0:
                 raise ValueError("USDT金额必须大于0")
             
-            # 设置杠杆
-            try:
-                self.client.futures_change_leverage(symbol=symbol, leverage=leverage)
-            except Exception as e:
-                raise Exception(f"设置杠杆失败: {str(e)}")
-
             # 准备订单参数
             order_params = {
                 'symbol': symbol,
@@ -264,11 +253,35 @@ class BinanceTrader:
             else:
                 order_params['type'] = self.ORDER_TYPE_MARKET
             
-            print("Order params:", order_params)  # 打印订单参数
+            # 设置杠杆（如果需要）
+            if leverage > 1:
+                try:
+                    self.client.futures_change_leverage(symbol=symbol, leverage=leverage)
+                except Exception as e:
+                    print(f"设置杠杆失败，使用默认杠杆: {str(e)}")
             
             # 发送订单
             try:
-                response = self.client.create_order(**order_params)
+                if order_type == self.ORDER_TYPE_MARKET:
+                    response = self.client.futures_create_order(
+                        symbol=symbol,
+                        side=side,
+                        type=order_type,
+                        quantity=order_params['quantity'],
+                        positionSide='BOTH',
+                        reduceOnly=reduce_only
+                    )
+                else:  # LIMIT order
+                    response = self.client.futures_create_order(
+                        symbol=symbol,
+                        side=side,
+                        type=order_type,
+                        quantity=order_params['quantity'],
+                        positionSide='BOTH',
+                        reduceOnly=reduce_only,
+                        price=price,
+                        timeInForce=self.TIME_IN_FORCE_GTC
+                    )
                 return response
             except Exception as e:
                 error_msg = str(e)
@@ -320,7 +333,7 @@ class BinanceTrader:
             print(f"平仓方向: {side}, 持仓数量: {abs(position_amt)}")
             
             # 执行市价平仓
-            response = self.client.futures_new_order(
+            response = self.client.futures_create_order(
                 symbol=symbol,
                 side=side,
                 type='MARKET',

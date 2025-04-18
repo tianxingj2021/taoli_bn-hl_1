@@ -57,8 +57,8 @@ cd ~/trading
 
 ```bash
 # 克隆主项目
-git clone https://github.com/tianxingj2021/taoli_bn-hl.git
-cd taoli_bn-hl
+git clone https://github.com/tianxingj2021/taoli_bn-hl_1.git
+cd taoli_bn-hl_1
 
 # 创建虚拟环境
 python3 -m venv venv
