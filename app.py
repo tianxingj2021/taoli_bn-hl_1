@@ -13,10 +13,11 @@ binance_monitor = FundingRateMonitor()
 binance_trader = BinanceTrader()
 hyperliquid_trader = HyperliquidTrader()
 
-def calculate_binance_next_funding_time(timestamp_ms: int) -> str:
-    """将币安的时间戳转换为北京时间
+def calculate_binance_next_funding_time(timestamp_ms: int, symbol: str) -> str:
+    """将币安的时间戳转换为北京时间，如果时间已过则获取最新的结算时间
     Args:
         timestamp_ms: 毫秒级时间戳，代表下次结算时间
+        symbol: 交易对名称
     Returns:
         str: 格式化的北京时间
     """
@@ -31,9 +32,18 @@ def calculate_binance_next_funding_time(timestamp_ms: int) -> str:
         # 转换为北京时间
         beijing_time = utc_time.astimezone(pytz.timezone('Asia/Shanghai'))
         
-        # 如果结算时间已过，返回占位符
+        # 如果结算时间已过，获取最新的结算时间
         if beijing_time < current_time:
-            return "-"
+            try:
+                # 从币安获取最新的结算时间
+                latest_info = binance_trader.client.futures_mark_price(symbol=symbol)
+                if latest_info:
+                    new_timestamp = latest_info[0]['nextFundingTime']
+                    # 递归调用，但不传symbol参数以避免无限循环
+                    return calculate_binance_next_funding_time(new_timestamp, "")
+            except Exception as e:
+                print(f"获取{symbol}最新结算时间失败: {e}")
+                return "-"
             
         return beijing_time.strftime('%Y-%m-%d %H:%M:%S')
     except Exception as e:
@@ -60,7 +70,7 @@ def find_arbitrage_opportunities(hl_rates, binance_rates, min_diff=0.25):
             
             # 获取币安的下次结算时间
             try:
-                binance_next_funding = calculate_binance_next_funding_time(binance_rates[binance_symbol].next_funding_time)
+                binance_next_funding = calculate_binance_next_funding_time(binance_rates[binance_symbol].next_funding_time, binance_symbol)
                 binance_funding_time = datetime.strptime(binance_next_funding, '%Y-%m-%d %H:%M:%S')
                 # 将币安时间转换为带时区的时间
                 binance_funding_time = pytz.timezone('Asia/Shanghai').localize(binance_funding_time)
@@ -180,7 +190,7 @@ def get_funding_rates():
             if symbol.endswith('USDT'):
                 base_symbol = symbol[:-4]
                 try:
-                    binance_next_funding = calculate_binance_next_funding_time(info.next_funding_time)
+                    binance_next_funding = calculate_binance_next_funding_time(info.next_funding_time, base_symbol)
                 except:
                     binance_next_funding = "-"
                     
