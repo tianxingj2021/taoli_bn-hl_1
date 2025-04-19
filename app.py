@@ -293,13 +293,6 @@ def place_binance_order():
                 'status': 'error',
                 'message': str(e)
             })
-        
-    except ValueError as e:
-        print(f"参数验证失败: {str(e)}")  # 添加调试信息
-        return jsonify({
-            'status': 'error',
-            'message': str(e)
-        })
     except Exception as e:
         print(f"处理请求失败: {str(e)}")  # 添加调试信息
         return jsonify({
@@ -499,6 +492,8 @@ def get_hyperliquid_position(symbol):
 def hyperliquid_order():
     try:
         data = request.get_json()
+        print(f"收到Hyperliquid下单请求数据: {data}")  # 添加调试信息
+        
         symbol = data.get('symbol')
         side = data.get('side')
         order_type = data.get('order_type', 'MARKET')
@@ -508,13 +503,21 @@ def hyperliquid_order():
         leverage = int(data.get('leverage', 1))
 
         if not all([symbol, side]):
-            return jsonify({'status': 'error', 'message': '缺少必要参数'}), 400
+            return jsonify({
+                'status': 'error',
+                'message': '缺少必要参数: symbol或side'
+            }), 400
 
         if not quantity and not usdt_amount:
-            return jsonify({'status': 'error', 'message': '必须指定数量或USDT金额'}), 400
+            return jsonify({
+                'status': 'error',
+                'message': '必须指定quantity或usdt_amount其中一个参数'
+            }), 400
 
         # 移除 USDT 后缀
         symbol = symbol.replace('USDT', '')
+        
+        print(f"处理后的参数: symbol={symbol}, side={side}, quantity={quantity}, usdt_amount={usdt_amount}, leverage={leverage}, order_type={order_type}, price={price}")
 
         result = hyperliquid_trader.place_order(
             symbol=symbol,
@@ -522,16 +525,15 @@ def hyperliquid_order():
             order_type=order_type,
             quantity=quantity if quantity else None,
             price=price,
-            usdt_amount=usdt_amount,
+            usdt_amount=usdt_amount if not quantity else None,
             leverage=leverage
         )
         
-        print(f"下单结果: {result}")
+        print(f"Hyperliquid下单结果: {result}")
         
-        # 如果result是字典类型且包含status字段
         if isinstance(result, dict):
-            if result.get('status') == 'success' or result.get('status') == 'pending':
-                return jsonify(result), 200
+            if result.get('status') in ['success', 'pending']:
+                return jsonify(result)
             else:
                 return jsonify(result), 400
         else:
@@ -541,7 +543,7 @@ def hyperliquid_order():
             }), 400
 
     except Exception as e:
-        print(f"下单异常: {str(e)}")
+        print(f"Hyperliquid下单异常: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)

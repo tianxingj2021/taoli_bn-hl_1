@@ -745,6 +745,11 @@
 
         // 修改updateCurrentOpportunity函数
         async function updateCurrentOpportunity(opportunities, threshold) {
+            console.log('开始更新当前机会:', {
+                opportunitiesCount: opportunities?.length,
+                threshold
+            });
+            
             const currentOpportunityBody = document.getElementById('currentOpportunityBody');
             
             if (!opportunities || opportunities.length === 0) {
@@ -758,6 +763,11 @@
                     return Math.abs(opp.difference) >= Math.abs(threshold) && 
                            opp.strategy && 
                            !opp.strategy.includes('暂无套利机会');
+                });
+
+                console.log('过滤后的有效机会:', {
+                    validOpportunitiesCount: validOpportunities.length,
+                    firstOpportunity: validOpportunities[0]
                 });
 
                 if (validOpportunities.length === 0) {
@@ -782,6 +792,13 @@
                     const longExchange = longMatch ? longMatch[1] : '';
                     const shortExchange = shortMatch ? shortMatch[1] : '';
 
+                    console.log('处理交易对:', {
+                        symbol: opp.symbol,
+                        strategy: opp.strategy,
+                        longExchange,
+                        shortExchange
+                    });
+
                     // 根据做多做空交易所来确定对应的费率
                     const longRate = longExchange === 'Binance' ? opp.binance_rate : opp.hl_rate;
                     const shortRate = shortExchange === 'Binance' ? opp.binance_rate : opp.hl_rate;
@@ -795,6 +812,15 @@
                     const hlBalance = await getHyperliquidBalance();
                     const positionRatio = parseFloat(document.getElementById('positionRatioInput').value) || 0.5;
                     const recommendedPosition = Math.floor(Math.min(binanceBalance, hlBalance) * recommendedLeverage * positionRatio);
+
+                    console.log('计算结果:', {
+                        symbol: opp.symbol,
+                        recommendedLeverage,
+                        recommendedPosition,
+                        binanceBalance,
+                        hlBalance,
+                        positionRatio
+                    });
 
                     // 计算预计利润
                     const tradingFee = 0.002; // 0.2%的总交易手续费
@@ -1451,8 +1477,16 @@
                 
                 // 如果是限价单，添加价格
                 if (orderData.order_type === 'LIMIT') {
-                    orderData.price = parseFloat(document.getElementById('orderPrice').value);
+                    const priceInput = document.getElementById('orderPrice');
+                    if (!priceInput.value) {
+                        alert('限价单必须输入价格');
+                        submitBtn.disabled = false;
+                        return;
+                    }
+                    orderData.price = parseFloat(priceInput.value);
                 }
+                
+                console.log('发送下单请求:', orderData);
                 
                 const response = await fetch(`/api/${exchange}/order`, {
                     method: 'POST',
@@ -1463,15 +1497,16 @@
                 });
                 
                 const result = await response.json();
+                console.log('下单响应:', result);
                 
-                if (result.status === 'success') {
+                if (result.status === 'success' || result.status === 'pending') {
                     alert('下单成功！');
                     // 刷新持仓信息
-                    refreshPositions();
+                    await refreshPositions();
                     // 重置表单
                     document.getElementById('orderForm').reset();
                 } else {
-                    alert('下单失败: ' + result.message);
+                    alert('下单失败: ' + (result.message || '未知错误'));
                 }
             } catch (error) {
                 console.error('下单出错:', error);
@@ -1824,24 +1859,30 @@
                     shortResponse.json()
                 ]);
 
-                if (longResult.status === 'success' && shortResult.status === 'success') {
+                console.log('做多订单结果:', longResult);
+                console.log('做空订单结果:', shortResult);
+
+                // 检查两个订单是否都成功
+                const longSuccess = longResult.status === 'success' || longResult.status === 'pending';
+                const shortSuccess = shortResult.status === 'success' || shortResult.status === 'pending';
+
+                if (longSuccess && shortSuccess) {
                     alert('套利订单执行成功！');
                     // 刷新持仓信息
                     await refreshPositions();
                 } else {
                     let errorMessage = '套利订单执行失败:\n';
-                    if (longResult.status !== 'success') {
-                        errorMessage += `\n做多订单失败: ${longResult.message}`;
+                    if (!longSuccess) {
+                        errorMessage += `\n做多订单失败: ${longResult.message || '未知错误'}`;
                     }
-                    if (shortResult.status !== 'success') {
-                        errorMessage += `\n做空订单失败: ${shortResult.message}`;
+                    if (!shortSuccess) {
+                        errorMessage += `\n做空订单失败: ${shortResult.message || '未知错误'}`;
                     }
-                    throw new Error(errorMessage);
+                    alert(errorMessage);
                 }
             } catch (error) {
                 console.error('套利下单失败:', error);
-                alert(error.message);
-                throw error;
+                alert('套利下单失败: ' + error.message);
             }
         }
 
@@ -1872,6 +1913,28 @@
                 refreshData();
             });
         });
+
+        // 添加startArbitrage函数
+        async function startArbitrage(symbol, position, leverage, longExchange, shortExchange) {
+            try {
+                console.log('开始套利交易:', {
+                    symbol,
+                    position,
+                    leverage,
+                    longExchange,
+                    shortExchange
+                });
+                
+                // 调用下单函数
+                await placeOrders(symbol, leverage, position, longExchange, shortExchange);
+                
+                // 刷新持仓信息
+                await refreshPositions();
+            } catch (error) {
+                console.error('套利下单失败:', error);
+                alert('套利下单失败: ' + error.message);
+            }
+        }
     </script>
 </body>
 </html> 
