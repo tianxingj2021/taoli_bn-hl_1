@@ -1885,6 +1885,20 @@
                 alert('套利下单失败: ' + error.message);
             }
         }
+
+        // 添加startArbitrage函数
+        async function startArbitrage(symbol, position, leverage, longExchange, shortExchange) {
+            try {
+                // 调用下单函数
+                await placeOrders(symbol, leverage, position, longExchange, shortExchange);
+                
+                // 刷新持仓信息
+                await refreshPositions();
+            } catch (error) {
+                console.error('套利下单失败:', error);
+                alert('套利下单失败: ' + error.message);
+            }
+        }
         
         // 添加按钮点击事件监听
         document.getElementById('closeAllPositionsBtn').addEventListener('click', closeAllPositions);
