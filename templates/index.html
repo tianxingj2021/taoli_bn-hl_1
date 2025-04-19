@@ -497,6 +497,18 @@
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script>
+        // 添加防抖函数
+        function debounce(func, wait) {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), wait);
+            };
+        }
+
+        // 创建防抖版本的refreshData
+        const debouncedRefresh = debounce(() => refreshData(), 300);
+
         // 初始化select2
         $(document).ready(function() {
             $('#orderSymbol').select2({
@@ -745,11 +757,6 @@
 
         // 修改updateCurrentOpportunity函数
         async function updateCurrentOpportunity(opportunities, threshold) {
-            console.log('开始更新当前机会:', {
-                opportunitiesCount: opportunities?.length,
-                threshold
-            });
-            
             const currentOpportunityBody = document.getElementById('currentOpportunityBody');
             
             if (!opportunities || opportunities.length === 0) {
@@ -763,11 +770,6 @@
                     return Math.abs(opp.difference) >= Math.abs(threshold) && 
                            opp.strategy && 
                            !opp.strategy.includes('暂无套利机会');
-                });
-
-                console.log('过滤后的有效机会:', {
-                    validOpportunitiesCount: validOpportunities.length,
-                    firstOpportunity: validOpportunities[0]
                 });
 
                 if (validOpportunities.length === 0) {
@@ -792,13 +794,6 @@
                     const longExchange = longMatch ? longMatch[1] : '';
                     const shortExchange = shortMatch ? shortMatch[1] : '';
 
-                    console.log('处理交易对:', {
-                        symbol: opp.symbol,
-                        strategy: opp.strategy,
-                        longExchange,
-                        shortExchange
-                    });
-
                     // 根据做多做空交易所来确定对应的费率
                     const longRate = longExchange === 'Binance' ? opp.binance_rate : opp.hl_rate;
                     const shortRate = shortExchange === 'Binance' ? opp.binance_rate : opp.hl_rate;
@@ -812,15 +807,6 @@
                     const hlBalance = await getHyperliquidBalance();
                     const positionRatio = parseFloat(document.getElementById('positionRatioInput').value) || 0.5;
                     const recommendedPosition = Math.floor(Math.min(binanceBalance, hlBalance) * recommendedLeverage * positionRatio);
-
-                    console.log('计算结果:', {
-                        symbol: opp.symbol,
-                        recommendedLeverage,
-                        recommendedPosition,
-                        binanceBalance,
-                        hlBalance,
-                        positionRatio
-                    });
 
                     // 计算预计利润
                     const tradingFee = 0.002; // 0.2%的总交易手续费
@@ -1908,33 +1894,16 @@
             // ... existing code ...
             
             const positionRatioInput = document.getElementById('positionRatioInput');
-            positionRatioInput.addEventListener('change', function() {
-                // 当仓位比例改变时，刷新数据
-                refreshData();
-            });
+            positionRatioInput.addEventListener('input', debouncedRefresh);
         });
 
-        // 添加startArbitrage函数
-        async function startArbitrage(symbol, position, leverage, longExchange, shortExchange) {
-            try {
-                console.log('开始套利交易:', {
-                    symbol,
-                    position,
-                    leverage,
-                    longExchange,
-                    shortExchange
-                });
-                
-                // 调用下单函数
-                await placeOrders(symbol, leverage, position, longExchange, shortExchange);
-                
-                // 刷新持仓信息
-                await refreshPositions();
-            } catch (error) {
-                console.error('套利下单失败:', error);
-                alert('套利下单失败: ' + error.message);
-            }
-        }
+        // 添加阈值输入框的input事件监听（使用防抖）
+        const thresholdInput = document.getElementById('thresholdInput');
+        thresholdInput.addEventListener('input', debouncedRefresh);
+        
+        // 添加仓位比例输入框的input事件监听（使用防抖）
+        const positionRatioInput = document.getElementById('positionRatioInput');
+        positionRatioInput.addEventListener('input', debouncedRefresh);
     </script>
 </body>
 </html> 
