@@ -102,6 +102,46 @@
             border-top-right-radius: 0;
             border-bottom-right-radius: 0;
         }
+        .navbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .nav-left h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+
+        .nav-right {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .btn-warning {
+            background-color: #ffc107;
+            color: black;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
     </style>
 </head>
 <body>
@@ -1918,6 +1958,32 @@
         // 添加仓位比例输入框的input事件监听（使用防抖）
         const positionRatioInput = document.getElementById('positionRatioInput');
         positionRatioInput.addEventListener('input', debouncedRefresh);
+
+        // 添加重启功能
+        document.getElementById('restartBtn').addEventListener('click', async function() {
+            if (confirm('确定要重启服务器吗？重启后需要重新访问页面。')) {
+                try {
+                    const response = await fetch('/api/restart', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        alert('服务器正在重启，请稍后重新访问页面。');
+                        // 3秒后自动刷新页面
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 3000);
+                    } else {
+                        alert('重启失败：' + data.message);
+                    }
+                } catch (error) {
+                    alert('重启失败：' + error.message);
+                }
+            }
+        });
     </script>
 </body>
 </html> 

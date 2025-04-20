@@ -8,6 +8,8 @@ from binance_trader import BinanceTrader
 from hyperliquid_trader import HyperliquidTrader
 import json
 import time
+import os
+import signal
 
 app = Flask(__name__)
 binance_monitor = FundingRateMonitor()
@@ -731,6 +733,24 @@ def get_hyperliquid_commission_rate():
         return jsonify({
             'status': 'error',
             'message': str(e)
+        })
+
+@app.route('/api/restart', methods=['POST'])
+def restart_server():
+    """重启服务器接口"""
+    try:
+        # 获取当前进程ID
+        pid = os.getpid()
+        # 发送SIGTERM信号给当前进程
+        os.kill(pid, signal.SIGTERM)
+        return jsonify({
+            'status': 'success',
+            'message': '服务器正在重启...'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'重启失败: {str(e)}'
         })
 
 if __name__ == '__main__':
