@@ -7,6 +7,7 @@ import pytz
 from binance_trader import BinanceTrader
 from hyperliquid_trader import HyperliquidTrader
 import json
+import time
 
 app = Flask(__name__)
 binance_monitor = FundingRateMonitor()
@@ -34,16 +35,32 @@ def calculate_binance_next_funding_time(timestamp_ms: int, symbol: str) -> str:
         
         # 如果结算时间已过，获取最新的结算时间
         if beijing_time < current_time:
-            try:
-                # 从币安获取最新的结算时间
-                latest_info = binance_trader.client.futures_mark_price(symbol=symbol)
-                if latest_info:
-                    new_timestamp = latest_info[0]['nextFundingTime']
-                    # 递归调用，但不传symbol参数以避免无限循环
-                    return calculate_binance_next_funding_time(new_timestamp, "")
-            except Exception as e:
-                print(f"获取{symbol}最新结算时间失败: {e}")
-                return "-"
+            max_retries = 3
+            retry_count = 0
+            while retry_count < max_retries:
+                try:
+                    # 确保symbol不为空
+                    if not symbol:
+                        print(f"警告: 尝试获取结算时间时symbol为空")
+                        return "-"
+                        
+                    # 从币安获取最新的结算时间
+                    latest_info = binance_trader.client.futures_mark_price(symbol=symbol)
+                    if latest_info and 'nextFundingTime' in latest_info[0]:
+                        new_timestamp = latest_info[0]['nextFundingTime']
+                        # 递归调用，保持symbol参数
+                        return calculate_binance_next_funding_time(new_timestamp, symbol)
+                    else:
+                        print(f"获取{symbol}最新结算时间失败: 返回数据格式不正确")
+                        retry_count += 1
+                        time.sleep(1)  # 等待1秒后重试
+                except Exception as e:
+                    print(f"获取{symbol}最新结算时间失败 (尝试 {retry_count + 1}/{max_retries}): {e}")
+                    retry_count += 1
+                    time.sleep(1)  # 等待1秒后重试
+            
+            print(f"获取{symbol}最新结算时间失败: 已达到最大重试次数")
+            return "-"
             
         return beijing_time.strftime('%Y-%m-%d %H:%M:%S')
     except Exception as e:
