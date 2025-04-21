@@ -232,9 +232,11 @@
                                 <!-- 杠杆倍数 -->
                                 <div class="col-md-2">
                                     <label class="form-label">杠杆倍数</label>
-                                    <select class="form-select" id="orderLeverage" required>
-                                        <option value="">加载中...</option>
-                                    </select>
+                                    <div class="input-group">
+                                        <input type="number" class="form-control" id="orderLeverage" min="1" value="1" required>
+                                        <span class="input-group-text">x</span>
+                                    </div>
+                                    <small class="form-text text-muted" id="maxLeverageDisplay">最大杠杆: 1x</small>
                                 </div>
                                 
                                 <!-- 订单类型 -->

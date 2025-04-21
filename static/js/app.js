@@ -309,22 +309,31 @@ function updateHighRateTokensTable(allContracts) {
 }
 
 // 获取交易对的最大杠杆倍数
-async function getMaxLeverage(symbol) {
+async function getMaxLeverage(exchange, symbol) {
     try {
-        // 获取币安最大杠杆
-        const bnResponse = await fetch(`/api/binance/max_leverage/${symbol}USDT`);
-        const bnData = await bnResponse.json();
-        const binanceLeverage = bnData.status === 'success' ? bnData.data : 1;
+        let response;
+        let processedSymbol;
         
-        // 获取Hyperliquid最大杠杆
-        const hlResponse = await fetch(`/api/hyperliquid/max_leverage/${symbol}`);
-        const hlData = await hlResponse.json();
-        const hlLeverage = hlData.status === 'success' ? hlData.data : 1;
+        if (exchange === 'binance') {
+            // 对于币安，确保使用USDT后缀
+            processedSymbol = symbol.endsWith('USDT') ? symbol : `${symbol}USDT`;
+        } else {
+            // 对于Hyperliquid，只使用基础货币名称（如从BTC/USDC:USDC中提取BTC）
+            processedSymbol = symbol.split('/')[0];
+        }
         
-        // 返回较小值
-        return Math.min(binanceLeverage, hlLeverage);
+        console.log(`获取${exchange}交易所${processedSymbol}的最大杠杆`);
+        response = await fetch(`/api/${exchange}/max_leverage/${processedSymbol}`);
+        
+        const result = await response.json();
+        if (result.status === 'success') {
+            console.log(`${exchange}交易所${processedSymbol}的最大杠杆为: ${result.data}`);
+            return result.data;
+        }
+        console.log(`获取${exchange}交易所${processedSymbol}的最大杠杆失败，使用默认值1`);
+        return 1; // 默认返回1倍杠杆
     } catch (error) {
-        console.error(`获取${symbol}最大杠杆倍数失败:`, error);
+        console.error(`获取${exchange}交易所${symbol}最大杠杆倍数失败:`, error);
         return 1;
     }
 }
@@ -369,7 +378,7 @@ async function updateAutoTradeConfig(opportunities) {
             }
             
             // 获取最大杠杆倍数
-            const maxLeverage = await getMaxLeverage(opp.symbol);
+            const maxLeverage = await getMaxLeverage(longExchange, opp.symbol);
             
             // 计算建议仓位
             const binanceBalance = binanceBalanceResponse.status === 'success' ? binanceBalanceResponse.data.balance : 0;
@@ -517,6 +526,11 @@ function updateBinancePositions(data) {
                         <span>开仓价: ${parseFloat(pos.entryPrice).toFixed(4)}</span>
                         <span>标记价: ${parseFloat(pos.markPrice).toFixed(4)}</span>
                     </div>
+                    <div class="d-flex justify-content-end mt-2">
+                        <button class="btn btn-sm btn-danger" onclick="closePosition('binance', '${pos.symbol}', ${positionSize})">
+                            平仓
+                        </button>
+                    </div>
                 </div>
             `;
         }).join('');
@@ -552,6 +566,11 @@ function updateHyperliquidPositions(data) {
                         <span>开仓价: ${parseFloat(pos.entryPrice).toFixed(4)}</span>
                         <span>标记价: ${parseFloat(pos.markPrice).toFixed(4)}</span>
                     </div>
+                    <div class="d-flex justify-content-end mt-2">
+                        <button class="btn btn-sm btn-danger" onclick="closePosition('hyperliquid', '${pos.symbol}', ${positionSize})">
+                            平仓
+                        </button>
+                    </div>
                 </div>
             `;
         }).join('');
@@ -584,11 +603,325 @@ async function fetchCommissionRates() {
     }
 }
 
+// 处理交易对变化，更新杠杆倍数
+async function handleSymbolChange() {
+    const exchange = document.getElementById('orderExchange').value;
+    const symbol = document.getElementById('orderSymbol').value;
+    const leverageInput = document.getElementById('orderLeverage');
+    
+    if (!symbol) {
+        return;
+    }
+    
+    try {
+        console.log(`获取${exchange}交易所${symbol}的最大杠杆`);
+        let processedSymbol;
+        
+        if (exchange === 'binance') {
+            processedSymbol = symbol.endsWith('USDT') ? symbol : `${symbol}USDT`;
+        } else {
+            processedSymbol = symbol.split('/')[0];
+        }
+        
+        console.log(`处理后的交易对: ${processedSymbol}`);
+        const response = await fetch(`/api/${exchange}/max_leverage/${processedSymbol}`);
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            const maxLeverage = result.data;
+            console.log(`获取到最大杠杆: ${maxLeverage}`);
+            
+            // 设置输入框的最大值和默认值
+            leverageInput.setAttribute('max', maxLeverage);
+            leverageInput.value = '1';
+            
+            // 更新最大杠杆显示
+            const maxLeverageDisplay = document.getElementById('maxLeverageDisplay');
+            if (maxLeverageDisplay) {
+                maxLeverageDisplay.textContent = `最大杠杆: ${maxLeverage}x`;
+            }
+        } else {
+            console.error('获取杠杆倍数失败:', result.message);
+            leverageInput.value = '1';
+            leverageInput.setAttribute('max', '1');
+        }
+    } catch (error) {
+        console.error('获取杠杆倍数失败:', error);
+        leverageInput.value = '1';
+        leverageInput.setAttribute('max', '1');
+    }
+}
+
+// 处理杠杆输入
+function handleLeverageInput(event) {
+    const input = event.target;
+    const maxLeverage = parseInt(input.getAttribute('max'));
+    let value = parseInt(input.value);
+    
+    // 如果输入为空或非数字，设置为1
+    if (isNaN(value) || value < 1) {
+        value = 1;
+    }
+    // 如果超过最大杠杆，设置为最大杠杆
+    else if (value > maxLeverage) {
+        value = maxLeverage;
+    }
+    
+    input.value = value;
+}
+
+// 处理交易所切换
+async function handleExchangeChange() {
+    const exchange = document.getElementById('orderExchange').value;
+    const symbolSelect = document.getElementById('orderSymbol');
+    const leverageInput = document.getElementById('orderLeverage');
+    
+    try {
+        // 销毁现有的Select2实例
+        if ($(symbolSelect).data('select2')) {
+            $(symbolSelect).select2('destroy');
+        }
+        
+        // 清空现有选项
+        symbolSelect.innerHTML = '<option value="">选择或输入交易对</option>';
+        
+        // 获取交易对列表
+        const response = await fetch(`/api/${exchange}/symbols`);
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            const symbols = result.data;
+            const options = symbols.map(symbolInfo => {
+                let value, text;
+                if (exchange === 'binance') {
+                    value = symbolInfo.symbol;
+                    text = value;
+                } else {
+                    const baseAsset = symbolInfo.baseAsset;
+                    value = `${baseAsset}/USDC:USDC`;
+                    text = value;
+                }
+                return new Option(text, value, false, false);
+            });
+            
+            // 添加选项到select元素
+            options.forEach(option => symbolSelect.appendChild(option));
+            
+            // 初始化Select2
+            $(symbolSelect).select2({
+                placeholder: '选择或输入交易对',
+                allowClear: true,
+                width: '100%',
+                dropdownParent: $(symbolSelect).parent(),
+                matcher: function(params, data) {
+                    // 如果没有搜索词，返回所有选项
+                    if ($.trim(params.term) === '') {
+                        return data;
+                    }
+
+                    // 如果选项为空，返回null
+                    if (typeof data.text === 'undefined') {
+                        return null;
+                    }
+
+                    // 执行实际的搜索匹配
+                    if (data.text.toLowerCase().indexOf(params.term.toLowerCase()) > -1) {
+                        return data;
+                    }
+
+                    return null;
+                }
+            }).on('select2:select', function(e) {
+                // 确保选中的值被正确设置
+                const selectedValue = e.params.data.id;
+                $(this).val(selectedValue).trigger('change');
+                handleSymbolChange();
+            });
+            
+            // 重置杠杆输入框
+            leverageInput.value = '1';
+            leverageInput.setAttribute('max', '1');
+            
+            // 重置最大杠杆显示
+            const maxLeverageDisplay = document.getElementById('maxLeverageDisplay');
+            if (maxLeverageDisplay) {
+                maxLeverageDisplay.textContent = '最大杠杆: 1x';
+            }
+        }
+    } catch (error) {
+        console.error('获取交易对列表失败:', error);
+    }
+}
+
+// 刷新交易对列表
+async function refreshSymbols() {
+    await handleExchangeChange();
+}
+
+// 提交订单
+async function submitOrder(event) {
+    event.preventDefault();
+    
+    const submitButton = document.getElementById('submitOrderBtn');
+    submitButton.disabled = true;
+    
+    try {
+        const exchange = document.getElementById('orderExchange').value;
+        let symbol = document.getElementById('orderSymbol').value;
+        const side = document.getElementById('orderSide').value;
+        const leverage = parseInt(document.getElementById('orderLeverage').value);
+        const orderType = document.getElementById('orderType').value;
+        const amount = parseFloat(document.getElementById('orderAmount').value);
+        const price = orderType === 'LIMIT' ? parseFloat(document.getElementById('orderPrice').value) : null;
+        
+        // 根据交易所处理交易对格式
+        if (exchange === 'binance' && !symbol.endsWith('USDT')) {
+            symbol = symbol + 'USDT';
+        } else if (exchange === 'hyperliquid' && !symbol.includes('/USDC:USDC')) {
+            // 如果是Hyperliquid但不是完整格式，添加后缀
+            symbol = `${symbol}/USDC:USDC`;
+        }
+        
+        const orderData = {
+            symbol: symbol,
+            side: side,
+            quantity: amount,
+            leverage: leverage,
+            order_type: orderType,
+            price: price
+        };
+        
+        console.log('提交订单数据:', orderData);
+        
+        const response = await fetch(`/api/${exchange}/order`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(orderData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            alert('下单成功！');
+            // 刷新持仓信息
+            await refreshPositions();
+        } else {
+            alert('下单失败：' + result.message);
+        }
+    } catch (error) {
+        console.error('下单失败:', error);
+        alert('下单失败：' + error.message);
+    } finally {
+        submitButton.disabled = false;
+    }
+}
+
+// 平仓功能
+async function closePosition(exchange, symbol, positionSize) {
+    try {
+        // 处理交易对格式
+        let processedSymbol;
+        if (exchange === 'binance') {
+            processedSymbol = symbol.endsWith('USDT') ? symbol : symbol + 'USDT';
+        } else {
+            // 对于Hyperliquid，我们需要移除/USDC:USDC后缀
+            processedSymbol = symbol.includes('/USDC:USDC') ? 
+                symbol.replace('/USDC:USDC', '') : symbol;
+        }
+        
+        console.log(`正在平仓: ${exchange} ${symbol}, 处理后的交易对: ${processedSymbol}`);
+        
+        // 使用正确的API路径
+        const apiPath = `${exchange === 'binance' ? 
+            `/api/binance/position/${processedSymbol}/close` : 
+            `/api/hyperliquid/position/${processedSymbol}/close`}`;
+        
+        const response = await fetch(apiPath, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        if (result.status === 'success') {
+            alert('平仓成功！');
+            await refreshPositions(); // 刷新持仓信息
+        } else {
+            alert('平仓失败：' + result.message);
+        }
+    } catch (error) {
+        console.error('平仓失败:', error);
+        alert('平仓失败：' + error.message);
+    }
+}
+
+// 一键平仓所有持仓
+async function closeAllPositions() {
+    if (!confirm('确定要平掉所有持仓吗？')) {
+        return;
+    }
+    
+    try {
+        const promises = [];
+        
+        // 获取当前持仓
+        const [bnPositionsResponse, hlPositionsResponse] = await Promise.all([
+            fetch('/api/binance/position/all'),
+            fetch('/api/hyperliquid/position/all')
+        ]);
+        
+        const [bnPositions, hlPositions] = await Promise.all([
+            bnPositionsResponse.json(),
+            hlPositionsResponse.json()
+        ]);
+        
+        // 处理币安持仓
+        if (bnPositions.status === 'success' && bnPositions.data.length > 0) {
+            bnPositions.data.forEach(pos => {
+                if (parseFloat(pos.positionAmt) !== 0) {
+                    promises.push(closePosition('binance', pos.symbol, parseFloat(pos.positionAmt)));
+                }
+            });
+        }
+        
+        // 处理Hyperliquid持仓
+        if (hlPositions.status === 'success' && hlPositions.data.length > 0) {
+            hlPositions.data.forEach(pos => {
+                if (parseFloat(pos.positionAmt) !== 0) {
+                    promises.push(closePosition('hyperliquid', pos.symbol, parseFloat(pos.positionAmt)));
+                }
+            });
+        }
+        
+        // 等待所有平仓操作完成
+        await Promise.all(promises);
+        
+        alert('所有持仓已平仓成功！');
+        await refreshPositions(); // 刷新持仓信息
+    } catch (error) {
+        console.error('一键平仓失败:', error);
+        alert('一键平仓失败：' + error.message);
+    }
+}
+
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('页面开始初始化...');
     
     try {
+        // 添加杠杆输入事件监听
+        const leverageInput = document.getElementById('orderLeverage');
+        if (leverageInput) {
+            leverageInput.addEventListener('input', handleLeverageInput);
+            leverageInput.addEventListener('change', handleLeverageInput);
+        }
+        
+        // 首先加载交易对列表
+        await handleExchangeChange();
+        
         // 初始化各个功能区域
         await Promise.all([
             refreshBalances(),
@@ -605,6 +938,12 @@ document.addEventListener('DOMContentLoaded', async function() {
                 refreshPositions()
             ]);
         }, 30000);  // 每30秒刷新一次余额和持仓
+        
+        // 在页面加载完成后添加一键平仓按钮的事件监听
+        const closeAllPositionsBtn = document.getElementById('closeAllPositionsBtn');
+        if (closeAllPositionsBtn) {
+            closeAllPositionsBtn.addEventListener('click', closeAllPositions);
+        }
         
         console.log('初始化完成');
     } catch (error) {
