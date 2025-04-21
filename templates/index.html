@@ -1707,7 +1707,7 @@
 
             // 筛选出结算费率大于0.25%的交易对
             const highRateTokens = sortedHlTokens.filter(item => 
-                parseFloat(item.settlement_rate) >= 0.1
+                parseFloat(item.settlement_rate) >= 0.25
             );
 
             if (highRateTokens.length === 0) {
