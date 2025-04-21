@@ -32,8 +32,9 @@ class HyperliquidTrader:
                 config_path = os.path.join(os.path.dirname(__file__), "config.json")
                 with open(config_path, 'r') as f:
                     config = json.load(f)
-                    self.private_key = config.get('hyperliquid_private_key')
-                    self.wallet_address = config.get('account_address')
+                    hyperliquid_config = config.get('hyperliquid', {})
+                    self.private_key = hyperliquid_config.get('private_key')
+                    self.wallet_address = hyperliquid_config.get('wallet_address')
             
             if not self.private_key or not self.wallet_address:
                 raise ValueError("私钥或钱包地址未配置")
@@ -427,40 +428,44 @@ class HyperliquidTrader:
         """获取交易对支持的最大杠杆倍数
         
         Args:
-            symbol: 交易对名称，如 'BTC/USDC:USDC'
+            symbol: 交易对名称，如 'BTC' 或 'BTC/USDC:USDC'
             
         Returns:
             int: 最大杠杆倍数
         """
         try:
-            # 如果是币安格式，先转换为Hyperliquid格式
-            if 'USDT' in symbol and '/' not in symbol:
-                symbol = self.convert_symbol_format(symbol)
+            # 处理交易对格式
+            base_symbol = symbol.split('/')[0] if '/' in symbol else symbol
+            base_symbol = base_symbol.split(':')[0] if ':' in base_symbol else base_symbol
+            base_symbol = base_symbol.replace('USDT', '')  # 移除USDT后缀
+            formatted_symbol = f"{base_symbol}/USDC:USDC"
             
-            # 从交易对名称中提取币种名称
-            coin = symbol.split('/')[0]
+            print(f"获取最大杠杆倍数 - 原始交易对: {symbol}, 处理后: {formatted_symbol}")
             
             # 获取市场信息
             markets = self.exchange.fetch_markets()
             for market in markets:
-                if market['symbol'] == symbol:
+                if market['symbol'] == formatted_symbol:
                     max_leverage = market['limits']['leverage']['max']
                     if max_leverage is not None:
+                        print(f"从市场信息获取到最大杠杆: {max_leverage}")
                         return int(max_leverage)
                     break
             
             # 如果在市场信息中找不到，尝试从仓位信息中获取
-            positions = self.exchange.fetch_positions([symbol])
+            positions = self.exchange.fetch_positions([formatted_symbol])
             for position in positions:
-                if position['symbol'] == symbol:
+                if position['symbol'] == formatted_symbol:
                     max_leverage = position['info']['position']['maxLeverage']
                     if max_leverage is not None:
+                        print(f"从仓位信息获取到最大杠杆: {max_leverage}")
                         return int(max_leverage)
             
-            raise Exception(f"无法获取交易对 {symbol} 的最大杠杆倍数")
+            raise Exception(f"无法获取交易对 {formatted_symbol} 的最大杠杆倍数")
             
         except Exception as e:
-            raise Exception(f"获取最大杠杆倍数失败: {str(e)}")
+            print(f"获取最大杠杆倍数失败: {str(e)}")
+            return 1  # 如果获取失败，返回默认值1而不是抛出异常
 
     def get_symbol_price(self, symbol: str) -> float:
         """获取交易对的当前价格"""

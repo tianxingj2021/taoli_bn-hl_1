@@ -62,7 +62,20 @@ class FundingRateMonitor:
         except Exception as e:
             print(f"获取资金费率失败: {e}")
             return {}
-            
+
+    async def get_all_funding_rates(self) -> Dict[str, FundingRateInfo]:
+        """异步获取所有活跃交易对的当前资金费率
+        
+        Returns:
+            Dict[str, FundingRateInfo]: 交易对到资金费率信息的映射
+        """
+        try:
+            # 直接调用同步方法，因为binance-python库不支持异步操作
+            return self.get_funding_rates()
+        except Exception as e:
+            print(f"获取资金费率失败: {e}")
+            return {}
+        
     def get_top_rates(self, limit: int = 20) -> List[Tuple[str, FundingRateInfo]]:
         """获取资金费率最高的交易对
         

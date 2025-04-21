@@ -11,8 +11,8 @@ class BinanceTrader:
     def __init__(self):
         """初始化BinanceTrader"""
         self.load_config()
-        self.client = Client(api_key=self.api_key, api_secret=self.api_secret)
-        self.ws_base_url = "wss://fstream.binance.com/ws"
+        self.client = Client(api_key=self.api_key, api_secret=self.api_secret, testnet=self.testnet)
+        self.ws_base_url = "wss://fstream.binance.com/ws" if not self.testnet else "wss://stream.binancefuture.com/ws"
         
         # 定义订单类型常量
         self.ORDER_TYPE_LIMIT = 'LIMIT'
@@ -30,8 +30,10 @@ class BinanceTrader:
             try:
                 with open('config.json', 'r') as f:
                     config = json.load(f)
-                    self.api_key = config.get('binance_api_key')
-                    self.api_secret = config.get('binance_api_secret')
+                    binance_config = config.get('binance', {})
+                    self.api_key = binance_config.get('api_key')
+                    self.api_secret = binance_config.get('api_secret')
+                    self.testnet = binance_config.get('testnet', False)
             except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
                 raise Exception(f"无法加载API密钥: {str(e)}")
 
