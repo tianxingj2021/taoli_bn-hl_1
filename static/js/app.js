@@ -364,21 +364,27 @@ async function updateAutoTradeConfig(opportunities) {
 
             // 根据策略设置交易所和费率
             if (strategy.includes('hyperliquid做多')) {
-                longExchange = 'Hyperliquid';
-                shortExchange = 'Binance';
+                longExchange = 'hyperliquid';
+                shortExchange = 'binance';
                 longRate = opp.hl_rate;
                 shortRate = opp.binance_rate;
             } else if (strategy.includes('hyperliquid做空')) {
-                longExchange = 'Binance';
-                shortExchange = 'Hyperliquid';
+                longExchange = 'binance';
+                shortExchange = 'hyperliquid';
                 longRate = opp.binance_rate;
                 shortRate = opp.hl_rate;
             } else {
                 continue; // 跳过没有明确策略的机会
             }
             
-            // 获取最大杠杆倍数
-            const maxLeverage = await getMaxLeverage(longExchange, opp.symbol);
+            // 获取两个交易所的最大杠杆倍数
+            const [longMaxLeverage, shortMaxLeverage] = await Promise.all([
+                getMaxLeverage(longExchange, opp.symbol),
+                getMaxLeverage(shortExchange, opp.symbol)
+            ]);
+            
+            // 取两个交易所最大杠杆的较小值
+            const maxLeverage = Math.min(longMaxLeverage, shortMaxLeverage);
             
             // 计算建议仓位
             const binanceBalance = binanceBalanceResponse.status === 'success' ? binanceBalanceResponse.data.balance : 0;
@@ -391,13 +397,18 @@ async function updateAutoTradeConfig(opportunities) {
             // 取较小值作为最终建议仓位
             const suggestedPosition = Math.min(binanceSuggestedPosition, hlSuggestedPosition);
             
+            // 计算预计利润
+            const totalFee = 0.002; // 总手续费率 0.2%
+            const rateDifference = Math.abs(opp.difference) / 100; // 转换为小数
+            const expectedProfit = suggestedPosition * (rateDifference - totalFee);
+            
             // 创建表格行
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td>${opp.symbol}</td>
-                <td>${longExchange}</td>
+                <td>${longExchange === 'hyperliquid' ? 'Hyperliquid' : 'Binance'}</td>
                 <td class="${getColorClass(longRate)}">${formatRate(longRate)}</td>
-                <td>${shortExchange}</td>
+                <td>${shortExchange === 'hyperliquid' ? 'Hyperliquid' : 'Binance'}</td>
                 <td class="${getColorClass(shortRate)}">${formatRate(shortRate)}</td>
                 <td class="${getColorClass(opp.difference)}">${formatRate(opp.difference)}</td>
                 <td>${formatDateTime(opp.binance_next_funding)}</td>
@@ -405,6 +416,7 @@ async function updateAutoTradeConfig(opportunities) {
                 <td>${suggestedPosition.toFixed(2)} USDT</td>
                 <td>${maxLeverage}x</td>
                 <td class="text-success">${(positionRatio * 100).toFixed(0)}%</td>
+                <td class="${expectedProfit > 0 ? 'text-success' : 'text-danger'}">${expectedProfit.toFixed(2)} USDT</td>
                 <td>
                     <button class="btn btn-sm btn-primary" onclick="executeArbitrage('${opp.symbol}')">
                         执行套利
