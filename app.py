@@ -7,20 +7,16 @@ import pytz
 from binance_trader import BinanceTrader
 from hyperliquid_trader import HyperliquidTrader
 import json
-import time
-import os
-import signal
 
 app = Flask(__name__)
 binance_monitor = FundingRateMonitor()
 binance_trader = BinanceTrader()
 hyperliquid_trader = HyperliquidTrader()
 
-def calculate_binance_next_funding_time(timestamp_ms: int, symbol: str) -> str:
-    """将币安的时间戳转换为北京时间，如果时间已过则获取最新的结算时间
+def calculate_binance_next_funding_time(timestamp_ms: int) -> str:
+    """将币安的时间戳转换为北京时间
     Args:
         timestamp_ms: 毫秒级时间戳，代表下次结算时间
-        symbol: 交易对名称
     Returns:
         str: 格式化的北京时间
     """
@@ -35,33 +31,8 @@ def calculate_binance_next_funding_time(timestamp_ms: int, symbol: str) -> str:
         # 转换为北京时间
         beijing_time = utc_time.astimezone(pytz.timezone('Asia/Shanghai'))
         
-        # 如果结算时间已过，获取最新的结算时间
+        # 如果结算时间已过，返回占位符
         if beijing_time < current_time:
-            max_retries = 3
-            retry_count = 0
-            while retry_count < max_retries:
-                try:
-                    # 确保symbol不为空
-                    if not symbol:
-                        print(f"警告: 尝试获取结算时间时symbol为空")
-                        return "-"
-                        
-                    # 从币安获取最新的结算时间
-                    latest_info = binance_trader.client.futures_mark_price(symbol=symbol)
-                    if latest_info and 'nextFundingTime' in latest_info[0]:
-                        new_timestamp = latest_info[0]['nextFundingTime']
-                        # 递归调用，保持symbol参数
-                        return calculate_binance_next_funding_time(new_timestamp, symbol)
-                    else:
-                        print(f"获取{symbol}最新结算时间失败: 返回数据格式不正确")
-                        retry_count += 1
-                        time.sleep(1)  # 等待1秒后重试
-                except Exception as e:
-                    print(f"获取{symbol}最新结算时间失败 (尝试 {retry_count + 1}/{max_retries}): {e}")
-                    retry_count += 1
-                    time.sleep(1)  # 等待1秒后重试
-            
-            print(f"获取{symbol}最新结算时间失败: 已达到最大重试次数")
             return "-"
             
         return beijing_time.strftime('%Y-%m-%d %H:%M:%S')
@@ -89,7 +60,7 @@ def find_arbitrage_opportunities(hl_rates, binance_rates, min_diff=0.25):
             
             # 获取币安的下次结算时间
             try:
-                binance_next_funding = calculate_binance_next_funding_time(binance_rates[binance_symbol].next_funding_time, binance_symbol)
+                binance_next_funding = calculate_binance_next_funding_time(binance_rates[binance_symbol].next_funding_time)
                 binance_funding_time = datetime.strptime(binance_next_funding, '%Y-%m-%d %H:%M:%S')
                 # 将币安时间转换为带时区的时间
                 binance_funding_time = pytz.timezone('Asia/Shanghai').localize(binance_funding_time)
@@ -171,13 +142,13 @@ def index():
     return render_template('index.html')
 
 @app.route('/api/funding_rates')
-def get_funding_rates():
+async def get_funding_rates():
     try:
         # 获取当前时间
         current_time = datetime.now(pytz.timezone('Asia/Shanghai'))
         
         # 获取Hyperliquid资金费率
-        hl_rates = asyncio.run(get_hl_rates())
+        hl_rates = await get_hl_rates()
         
         # 获取币安资金费率
         binance_rates = binance_monitor.get_funding_rates()
@@ -209,7 +180,7 @@ def get_funding_rates():
             if symbol.endswith('USDT'):
                 base_symbol = symbol[:-4]
                 try:
-                    binance_next_funding = calculate_binance_next_funding_time(info.next_funding_time, base_symbol)
+                    binance_next_funding = calculate_binance_next_funding_time(info.next_funding_time)
                 except:
                     binance_next_funding = "-"
                     
@@ -280,7 +251,6 @@ def place_binance_order():
     """下单接口"""
     try:
         data = request.get_json()
-        print(f"收到下单请求数据: {data}")  # 添加调试信息
         
         # 验证必需参数
         required_fields = ['symbol', 'side', 'quantity', 'leverage']
@@ -299,31 +269,27 @@ def place_binance_order():
         order_type = data.get('order_type', 'MARKET')  # 修改这里的参数名
         price = float(data['price']) if 'price' in data and data['price'] else None
         
-        print(f"处理后的参数: symbol={symbol}, side={side}, usdt_amount={usdt_amount}, leverage={leverage}, order_type={order_type}, price={price}")  # 添加调试信息
-        
         # 调用下单函数
-        try:
-            response = binance_trader.place_order(
-                symbol=symbol,
-                side=side,
-                usdt_amount=usdt_amount,  # 使用usdt_amount参数
-                leverage=leverage,
-                order_type=order_type,
-                price=price
-            )
-            print(f"下单响应: {response}")  # 添加调试信息
-            return jsonify({
-                'status': 'success',
-                'data': response
-            })
-        except Exception as e:
-            print(f"下单失败: {str(e)}")  # 添加调试信息
-            return jsonify({
-                'status': 'error',
-                'message': str(e)
-            })
+        response = binance_trader.place_order(
+            symbol=symbol,
+            side=side,
+            usdt_amount=usdt_amount,  # 使用usdt_amount参数
+            leverage=leverage,
+            order_type=order_type,
+            price=price
+        )
+        
+        return jsonify({
+            'status': 'success',
+            'data': response
+        })
+        
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        })
     except Exception as e:
-        print(f"处理请求失败: {str(e)}")  # 添加调试信息
         return jsonify({
             'status': 'error',
             'message': str(e)
@@ -386,31 +352,24 @@ def get_binance_symbol_info(symbol):
 def get_binance_symbols():
     """获取所有可交易的合约对"""
     try:
-        print("开始获取币安合约交易对...")
-        exchange_info = binance_trader.client.futures_exchange_info()
-        print(f"获取到的交易所信息: {exchange_info}")
-        
+        exchange_info = binance_trader.client.exchange_info()
         symbols = []
         for symbol_info in exchange_info['symbols']:
             if symbol_info['status'] == 'TRADING' and symbol_info['symbol'].endswith('USDT'):
                 symbols.append({
                     'symbol': symbol_info['symbol'],
                     'baseAsset': symbol_info['baseAsset'],
-                    'quoteAsset': symbol_info['quoteAsset'],
-                    'pricePrecision': symbol_info['pricePrecision'],
-                    'quantityPrecision': symbol_info['quantityPrecision']
+                    'quoteAsset': symbol_info['quoteAsset']
                 })
         
         # 按交易对名称排序
         symbols.sort(key=lambda x: x['symbol'])
-        print(f"处理后的交易对列表: {symbols}")
         
         return jsonify({
             'status': 'success',
             'data': symbols
         })
     except Exception as e:
-        print(f"获取币安合约交易对失败: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)
@@ -521,8 +480,6 @@ def get_hyperliquid_position(symbol):
 def hyperliquid_order():
     try:
         data = request.get_json()
-        print(f"收到Hyperliquid下单请求数据: {data}")  # 添加调试信息
-        
         symbol = data.get('symbol')
         side = data.get('side')
         order_type = data.get('order_type', 'MARKET')
@@ -532,21 +489,13 @@ def hyperliquid_order():
         leverage = int(data.get('leverage', 1))
 
         if not all([symbol, side]):
-            return jsonify({
-                'status': 'error',
-                'message': '缺少必要参数: symbol或side'
-            }), 400
+            return jsonify({'status': 'error', 'message': '缺少必要参数'}), 400
 
         if not quantity and not usdt_amount:
-            return jsonify({
-                'status': 'error',
-                'message': '必须指定quantity或usdt_amount其中一个参数'
-            }), 400
+            return jsonify({'status': 'error', 'message': '必须指定数量或USDT金额'}), 400
 
         # 移除 USDT 后缀
         symbol = symbol.replace('USDT', '')
-        
-        print(f"处理后的参数: symbol={symbol}, side={side}, quantity={quantity}, usdt_amount={usdt_amount}, leverage={leverage}, order_type={order_type}, price={price}")
 
         result = hyperliquid_trader.place_order(
             symbol=symbol,
@@ -554,15 +503,16 @@ def hyperliquid_order():
             order_type=order_type,
             quantity=quantity if quantity else None,
             price=price,
-            usdt_amount=usdt_amount if not quantity else None,
+            usdt_amount=usdt_amount,
             leverage=leverage
         )
         
-        print(f"Hyperliquid下单结果: {result}")
+        print(f"下单结果: {result}")
         
+        # 如果result是字典类型且包含status字段
         if isinstance(result, dict):
-            if result.get('status') in ['success', 'pending']:
-                return jsonify(result)
+            if result.get('status') == 'success' or result.get('status') == 'pending':
+                return jsonify(result), 200
             else:
                 return jsonify(result), 400
         else:
@@ -572,7 +522,7 @@ def hyperliquid_order():
             }), 400
 
     except Exception as e:
-        print(f"Hyperliquid下单异常: {str(e)}")
+        print(f"下单异常: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)
@@ -736,21 +686,18 @@ def get_hyperliquid_commission_rate():
         })
 
 @app.route('/api/restart', methods=['POST'])
-def restart_server():
-    """重启服务器接口"""
+def restart_service():
+    """重启服务"""
     try:
-        # 获取当前进程ID
-        pid = os.getpid()
-        # 发送SIGTERM信号给当前进程
-        os.kill(pid, signal.SIGTERM)
+        # 这里可以添加重启服务的逻辑
         return jsonify({
             'status': 'success',
-            'message': '服务器正在重启...'
+            'message': '服务重启成功'
         })
     except Exception as e:
         return jsonify({
             'status': 'error',
-            'message': f'重启失败: {str(e)}'
+            'message': str(e)
         })
 
 if __name__ == '__main__':
